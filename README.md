@@ -24,12 +24,6 @@ ImportError: failed to find libmagic.  Check your installation
 pip uninstall python-magic
 ```
 
-運行應用程式： 在專案目錄下執行以下命令啟動應用
-
-```
-python main.py
-```
-
 ## 預覽界面
 
 * 使用者可以通過直覺式界面上傳檔案，設置分割字串和重複字元數，並即時發送訊息進行詢問。
