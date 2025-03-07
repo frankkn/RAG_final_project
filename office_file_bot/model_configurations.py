@@ -19,7 +19,7 @@ configurations = {
         "deployment_name": os.getenv('AZURE_OPENAI_DEPLOYMENT_EMBEDDING'),
         "api_version": os.getenv('AZURE_OPENAI_VERSION'),
         "model": os.getenv('AZURE_OPENAI_DEPLOYMENT_EMBEDDING_MODEL_NAME'),
-        "openai_type": os.getenv('AZURE_OPENAI_TYPE')
+        "openai_type": os.getenv('AZURE_OPENAI_TYPE'),
     }
 
 }

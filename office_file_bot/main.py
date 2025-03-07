@@ -49,14 +49,17 @@ def RAG(state):
         docs = office_file(state.content)
     notify(state, "info", "分割段落...")
     splits = splitter(docs, eval(f"[{state.separators}]"),
-                        int(state.chunk_size),
-                        int(state.chunk_overlap))
+                      int(state.chunk_size),
+                      int(state.chunk_overlap))
     notify(state, "info", "轉向量...")
-    state.chain = rag(splits)
-
+    try:
+        state.chain = rag(splits)
+    except Exception as e:
+        notify(state, "error", f"轉向量失敗: {str(e)}")
+        print(f"錯誤: {str(e)}")
+        return
     notify(state, "info", "完成!")
     print('完成')
-
 
 def csv_file(state):
     if 'csv' in state.content and state.skiprows is not None:
@@ -114,7 +117,7 @@ def reset_chat(state: State) -> None:
     state.conversation = {
         "Conversation": [
         "你是誰?", 
-        "我是 Youtube 小助手, 可以回答影片內容"
+        "我是辦公室檔案小助手, 可以回答檔案內容"
         ]
     }
 
