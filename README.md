@@ -12,13 +12,13 @@ pip install -r requirements.txt
 執行 main.py
 ```
 
-如果有遇到
+如果遇到以下error
 
 ```
 ImportError: failed to find libmagic.  Check your installation
 ```
 
-請卸載 python-magic
+請刪除 python-magic
 
 ```
 pip uninstall python-magic
