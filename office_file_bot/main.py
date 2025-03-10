@@ -15,7 +15,7 @@ past_conversations = []
 selected_conv = None
 selected_row = [1]
 content = ""
-chunk_size = 150
+chunk_size = 500
 chunk_overlap = 0
 chain = None
 skiprows = None
@@ -44,22 +44,27 @@ def RAG(state):
     if 'pdf' in state.content:
         print('loading pdf...')
         docs = pdf_load(state.content)
-        print('pdf loaded.')
+        print(f'pdf loaded with {len(docs)} pages')
     else:
         docs = office_file(state.content)
+        print(f'file loaded with {len(docs)} documents')
+    
     notify(state, "info", "分割段落...")
     splits = splitter(docs, eval(f"[{state.separators}]"),
-                      int(state.chunk_size),
-                      int(state.chunk_overlap))
+                     int(state.chunk_size),
+                     int(state.chunk_overlap))
+    print(f"Created {len(splits)} splits")
+    
     notify(state, "info", "轉向量...")
     try:
-        state.chain = rag(splits)
+        collection_name = os.path.splitext(os.path.basename(state.content))[0]
+        state.chain = rag(splits, collection_name)
+        notify(state, "info", "完成!")
+        print('完成')
     except Exception as e:
         notify(state, "error", f"轉向量失敗: {str(e)}")
         print(f"錯誤: {str(e)}")
         return
-    notify(state, "info", "完成!")
-    print('完成')
 
 def csv_file(state):
     if 'csv' in state.content and state.skiprows is not None:

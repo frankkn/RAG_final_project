@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_experimental.agents import create_pandas_dataframe_agent
 from langchain_community.document_loaders import PyPDFLoader
 import pandas as pd
+import os
 
 import chromadb
 import uuid
@@ -71,14 +72,10 @@ def generate_db(db_path, collection_name, splits):
     gpt_embed_version = 'text-embedding-ada-002'
     try:
         gpt_emb_config = get_model_configuration(gpt_embed_version)
-    except ValueError as e:
-        print(f"Configuration error: {str(e)}")
-        raise
-    chroma_client = chromadb.PersistentClient(path=db_path)
-    print("ChromaDB client initialized")
+        chroma_client = chromadb.PersistentClient(path=db_path)
+        print("ChromaDB client initialized")
 
-    print("Setting up OpenAI embedding function...")
-    try:
+        print("Setting up OpenAI embedding function...")
         openai_ef = embedding_functions.OpenAIEmbeddingFunction(
             api_key=gpt_emb_config['api_key'],
             api_base=gpt_emb_config['api_base'],
@@ -86,36 +83,41 @@ def generate_db(db_path, collection_name, splits):
             api_version=gpt_emb_config['api_version'],
             deployment_id=gpt_emb_config['deployment_name']
         )
-    except Exception as e:
-        print(f"Failed to set up embedding function: {str(e)}")
-        raise
-    print("OpenAI embedding function set up")
+        print("OpenAI embedding function set up")
 
-    print("Creating or getting collection...")
-    collection = chroma_client.get_or_create_collection(
-        name=collection_name,
-        metadata={"hnsw:space": "cosine"},
-        embedding_function=openai_ef
-    )
-    print("Collection ready")
+        print("Creating or getting collection...")
+        collection = chroma_client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=openai_ef
+        )
+        print("Collection ready")
 
-    if collection.count() == 0:
-        print("Preparing documents for embedding...")
-        texts = [split.page_content for split in splits]
-        ids = [str(uuid.uuid4()) for _ in splits]
-        batch_size = 50  # 每批 50 個文檔
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            batch_ids = ids[i:i + batch_size]
-            print(f"Adding batch {i // batch_size + 1} with {len(batch_texts)} documents...")
-            try:
-                collection.add(documents=batch_texts, ids=batch_ids)
-            except Exception as e:
-                print(f"Failed to add batch {i // batch_size + 1}: {str(e)}")
-                raise
-        print("Documents added to collection")
+        if collection.count() == 0:
+            print("Preparing documents for embedding...")
+            texts = [split.page_content for split in splits]
+            ids = [str(uuid.uuid4()) for _ in splits]
+            batch_size = 10
+            total_batches = (len(texts) + batch_size - 1) // batch_size
+            
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                batch_ids = ids[i:i + batch_size]
+                batch_num = i // batch_size + 1
+                print(f"Adding batch {batch_num}/{total_batches} with {len(batch_texts)} documents...")
+                try:
+                    collection.add(documents=batch_texts, ids=batch_ids)
+                    print(f"Batch {batch_num}/{total_batches} completed successfully")
+                except Exception as batch_error:
+                    print(f"Error in batch {batch_num}: {str(batch_error)}")
+                    raise
+            print(f"Completed adding {len(texts)} documents in {total_batches} batches")
+        
+        return collection
     
-    return collection
+    except Exception as e:
+        print(f"Database generation failed: {str(e)}")
+        raise
 
 def pdf_load(file_path):
     loader = PyPDFLoader(file_path=file_path,
@@ -123,35 +125,39 @@ def pdf_load(file_path):
     docs = loader.load()
     return docs
 
-def rag(splits):
+def rag(splits, collection_name):
     print("Generating database...")
-    collection = generate_db("./", "OFFICE_FILE", splits)
-    print("Database generated successfully")
-    
-    print("Initializing chat model...")
-    chat_model = init_model()
-    print("Chat model initialized")
-    
-    print("Setting up prompt and parser...")
-    prompt, str_parser = init_prompt_parser()
-    print("Prompt and parser set up")
-    
-    def retrieve(question):
-        print("Retrieving documents...")
-        results = collection.query(query_texts=[question], n_results=5)
-        documents = results.get("documents", [[]])[0]
-        print("Documents retrieved")
-        return "\n".join(documents)
-    
-    print("Building RAG chain...")
-    chain = (
-        {"context": retrieve, "question": RunnablePassthrough()}
-        | prompt
-        | chat_model
-        | str_parser
-    )
-    print("RAG chain built")
-    return chain
+    try:
+        collection = generate_db("./", collection_name, splits)
+        print(f"Database generated successfully with {collection.count()} documents")
+        
+        print("Initializing chat model...")
+        chat_model = init_model()
+        print("Chat model initialized")
+        
+        print("Setting up prompt and parser...")
+        prompt, str_parser = init_prompt_parser()
+        print("Prompt and parser set up")
+        
+        def retrieve(question):
+            print("Retrieving documents...")
+            results = collection.query(query_texts=[question], n_results=5)
+            documents = results.get("documents", [[]])[0]
+            print(f"Retrieved {len(documents)} documents")
+            return "\n".join(documents)
+        
+        print("Building RAG chain...")
+        chain = (
+            {"context": retrieve, "question": RunnablePassthrough()}
+            | prompt
+            | chat_model
+            | str_parser
+        )
+        print("RAG chain built successfully")
+        return chain
+    except Exception as e:
+        print(f"RAG process failed: {str(e)}")
+        raise
 
 def pandas_agent(path, skiprows):
     df = pd.read_csv(path,skiprows=skiprows)
