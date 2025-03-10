@@ -93,21 +93,21 @@ def generate_db(db_path, collection_name, splits):
         )
         print("Collection ready")
 
-        if collection.count() == 0:
-            print("Preparing documents for embedding...")
-            texts = [split.page_content for split in splits]
-            ids = [str(uuid.uuid4()) for _ in splits]
-            batch_size = 10
-            
-            for i in range(0, len(texts), batch_size):
-                batch_texts = texts[i:i + batch_size]
-                batch_ids = ids[i:i + batch_size]
-                batch_num = i // batch_size + 1
-                try:
-                    collection.add(documents=batch_texts, ids=batch_ids)
-                except Exception as batch_error:
-                    print(f"Error in batch {batch_num}: {str(batch_error)}")
-                    raise
+        # if collection.count() == 0:
+        print("Preparing documents for embedding...")
+        texts = [split.page_content for split in splits]
+        ids = [str(uuid.uuid4()) for _ in splits]
+        batch_size = 10
+        
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            batch_ids = ids[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            try:
+                collection.add(documents=batch_texts, ids=batch_ids)
+            except Exception as batch_error:
+                print(f"Error in batch {batch_num}: {str(batch_error)}")
+                raise
         
         return collection
     
