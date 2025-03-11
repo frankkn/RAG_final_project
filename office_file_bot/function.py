@@ -23,6 +23,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import UnstructuredFileLoader
 from chromadb.utils import embedding_functions
 
+import hashlib
+
 def init_model():
     gpt_chat_version = 'gpt-4o'
     gpt_config = get_model_configuration(gpt_chat_version)
@@ -67,13 +69,37 @@ def splitter(docs, separators, chunk_size, chunk_overlap):
     splits = text_splitter.split_documents(docs)
     return splits
 
-def generate_db(db_path, collection_name, splits):
+def get_file_hash(file_path):
+    """計算檔案的 MD5 哈希值"""
+    with open(file_path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+def generate_db(db_path, collection_name, splits, file_path):
     print("Initializing ChromaDB client...")
     gpt_embed_version = 'text-embedding-ada-002'
     try:
         gpt_emb_config = get_model_configuration(gpt_embed_version)
         chroma_client = chromadb.PersistentClient(path=db_path)
         print("ChromaDB client initialized")
+
+        # 檢查是否已有集合並比較哈希
+        try:
+            collection = chroma_client.get_collection(name=collection_name)
+            stored_hash_path = os.path.join(db_path, f"{collection_name}_hash.txt")
+            if os.path.exists(stored_hash_path):
+                with open(stored_hash_path, "r") as f:
+                    stored_hash = f.read().strip()
+                current_hash = get_file_hash(file_path)
+                if stored_hash == current_hash:
+                    print(f"Reusing existing collection: {collection_name}")
+                    return collection
+                else:
+                    print(f"File content changed, regenerating collection: {collection_name}")
+                    chroma_client.delete_collection(name=collection_name)
+            else:
+                print(f"No hash file found, generating new collection: {collection_name}")
+        except Exception:
+            print(f"No existing collection found, creating new one: {collection_name}")
 
         print("Setting up OpenAI embedding function...")
         openai_ef = embedding_functions.OpenAIEmbeddingFunction(
@@ -93,7 +119,6 @@ def generate_db(db_path, collection_name, splits):
         )
         print("Collection ready")
 
-        # if collection.count() == 0:
         print("Preparing documents for embedding...")
         texts = [split.page_content for split in splits]
         ids = [str(uuid.uuid4()) for _ in splits]
@@ -109,6 +134,12 @@ def generate_db(db_path, collection_name, splits):
                 print(f"Error in batch {batch_num}: {str(batch_error)}")
                 raise
         
+        # 保存檔案哈希
+        current_hash = get_file_hash(file_path)
+        with open(os.path.join(db_path, f"{collection_name}_hash.txt"), "w") as f:
+            f.write(current_hash)
+        print(f"Saved file hash for {collection_name}")
+
         return collection
     
     except Exception as e:
@@ -121,9 +152,9 @@ def pdf_load(file_path):
     docs = loader.load()
     return docs
 
-def rag(splits, collection_name):
+def rag(splits, collection_name, file_path):
     try:
-        collection = generate_db("./", collection_name, splits)
+        collection = generate_db("./", collection_name, splits, file_path)
         chat_model = init_model()
         prompt, str_parser = init_prompt_parser()
         

@@ -1,5 +1,6 @@
 from taipy.gui import Gui, State, notify
 from function import *
+from loaders import FileLoader
 
 context = "以下是與AI助理的對話。 助理樂於助人、有創意、聰明且非常友善。 " \
           " \n\n人類：你好，你是誰？ 今天我能為您提供什麼幫助？ "
@@ -40,31 +41,36 @@ def on_init(state):
 def RAG(state):
     print(state.content)
     print(state.separators)
-    notify(state, "info", "載入中...")
-    if 'pdf' in state.content:
-        print('loading pdf...')
-        docs = pdf_load(state.content)
-        print(f'pdf loaded with {len(docs)} pages')
-    else:
-        docs = office_file(state.content)
-        print(f'file loaded with {len(docs)} documents')
+    notify(state, "info", f"開始處理檔案: {os.path.basename(state.content)}")
     
-    notify(state, "info", "分割段落...")
-    splits = splitter(docs, eval(f"[{state.separators}]"),
-                     int(state.chunk_size),
-                     int(state.chunk_overlap))
-    print(f"Created {len(splits)} splits")
-    
-    notify(state, "info", "轉向量...")
+    try:
+        docs = FileLoader.load(state.content)
+        notify(state, "success", f"檔案載入完成，共 {len(docs)} 頁/文件")
+        print(f'File loaded with {len(docs)} documents/pages')
+    except Exception as e:
+        notify(state, "error", f"檔案載入失敗: {str(e)}")
+        return
+
+    notify(state, "info", "正在分割段落...")
+    try:
+        splits = splitter(docs, eval(f"[{state.separators}]"),
+                         int(state.chunk_size),
+                         int(state.chunk_overlap))
+        notify(state, "success", f"分割完成，生成了 {len(splits)} 個片段")
+        print(f"Created {len(splits)} splits")
+    except Exception as e:
+        notify(state, "error", f"分割段落失敗: {str(e)}")
+        return
+
+    notify(state, "info", "正在生成向量資料庫...")
     try:
         collection_name = os.path.splitext(os.path.basename(state.content))[0]
-        state.chain = rag(splits, collection_name)
-        notify(state, "info", "完成!")
+        state.chain = rag(splits, collection_name, state.content)
+        notify(state, "success", "向量資料庫生成完成，可以開始提問！")
         print('完成')
     except Exception as e:
         notify(state, "error", f"轉向量失敗: {str(e)}")
         print(f"錯誤: {str(e)}")
-        return
 
 def csv_file(state):
     if 'csv' in state.content and state.skiprows is not None:
@@ -175,7 +181,6 @@ page = """
 
 <|part|class_name=card mt1|
 <|{current_user_message}|input|label=你的訊息...|on_action=send_message|class_name=fullwidth|change_delay=-1|>
-|>
 |>
 |>
 |>
