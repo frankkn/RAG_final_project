@@ -1,4 +1,3 @@
-# state.py
 import json
 import os
 
@@ -24,7 +23,6 @@ skiprows = None
 separators = "'\\n\\n', '\\n', ' ', ''"
 is_csv = False
 
-# 加載 config.json（如果存在的話）
 def load_config(config_file="config.json"):
     if os.path.exists(config_file):
         with open(config_file, "r", encoding="utf-8") as f:

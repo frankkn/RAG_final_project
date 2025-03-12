@@ -1,4 +1,3 @@
-# ui.py
 from taipy.gui import Gui, State, notify
 from rag import RAG, csv_file, request
 from state import *

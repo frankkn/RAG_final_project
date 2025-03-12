@@ -1,10 +1,7 @@
-# loaders.py
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_community.document_loaders import PyPDFLoader
 
 class FileLoader:
-    """檔案載入器工廠類別，用於根據檔案類型選擇適當的載入方式。"""
-
     @staticmethod
     def load(file_path):
         """
