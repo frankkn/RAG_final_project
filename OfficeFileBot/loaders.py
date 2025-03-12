@@ -1,4 +1,4 @@
-from langchain_community.document_loaders import UnstructuredFileLoader
+from langchain_unstructured import UnstructuredLoader
 from langchain_community.document_loaders import PyPDFLoader
 
 class FileLoader:
@@ -24,7 +24,7 @@ class FileLoader:
                 docs = loader.load()
                 return False, docs
             elif file_path.lower().endswith(('.docx', '.pptx', '.xlsx')):
-                loader = UnstructuredFileLoader(file_path)
+                loader = UnstructuredLoader(file_path)
                 docs = loader.load()
                 return False, docs
             elif file_path.lower().endswith('.csv'):

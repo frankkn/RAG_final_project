@@ -63,7 +63,7 @@ def tree_adapter(item: list):
 
 def select_conv(state: State, var_name: str, value) -> None:
     print(value)
-    state.conversation = state.past_conversations[value[0][0]][1]
+    state.conversation = state.past_conversations[value[0]][1]
     state.context = "以下是與AI助理的對話。 助理樂於助人、有創意、聰明且非常友善。"\
                     " \n\n人類：你好，你是誰？ 今天我能為您提供什麼幫助？ "
     for i in range(2, len(state.conversation["Conversation"]), 2):
