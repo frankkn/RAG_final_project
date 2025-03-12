@@ -29,7 +29,8 @@ pip install -r requirements.txt
 ```
 
 ```
-Run main.py
+$cd OfficeFileBot
+$python app.py
 ```
 
 If it occurs error like below:
