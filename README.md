@@ -29,8 +29,8 @@ pip install -r requirements.txt
 ```
 
 ```
-$cd OfficeFileBot
-$python app.py
+cd OfficeFileBot
+python app.py
 ```
 
 If it occurs error like below:
