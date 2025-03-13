@@ -61,7 +61,7 @@ def generate_db(file_path, db_path, collection_name):
         embedding_function=openai_ef
     )
 
-    if collection == 0:
+    if collection.count() == 0:
         doc = load_file(file_path)
 
         text_splitter = RecursiveCharacterTextSplitter(
@@ -100,14 +100,14 @@ if __name__ == "__main__":
     prompt, str_parser = init_prompt_parser()
 
     db_path = "./"
-    # file_path = 'example_ppt.pptx'
-    file_path = "CloudRecovery導入與上架流程v3.pptx"
+    file_path = 'example_ppt.pptx'
+    # file_path = "CloudRecovery導入與上架流程v3.pptx"
     # doc = load_file(file_path)
     # pprint(doc)
     collection_name = "INDUSTRY"
     collection = generate_db(file_path, db_path, collection_name)
     
     ppt_chain = rag(collection, chat_model, prompt, str_parser)
-    # question = "台灣的創新產業如何?"
-    question = "解釋一下CloudRecovery的流程"
+    question = "台灣的創新產業如何?"
+    # question = "解釋一下CloudRecovery的流程"
     print(ppt_chain.invoke(question))

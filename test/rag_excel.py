@@ -61,7 +61,7 @@ def generate_db(file_path, db_path, collection_name):
         embedding_function=openai_ef
     )
 
-    if collection == 0:
+    if collection.count() == 0:
         doc = load_file(file_path)
 
         text_splitter = RecursiveCharacterTextSplitter(
