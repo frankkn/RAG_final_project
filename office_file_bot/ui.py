@@ -1,27 +1,6 @@
 from taipy.gui import Gui, State, notify
-from function import *
-from loaders import FileLoader
-
-context = "以下是與AI助理的對話。 助理樂於助人、有創意、聰明且非常友善。 " \
-          " \n\n人類：你好，你是誰？ 今天我能為您提供什麼幫助？ "
-
-conversation = {
-    "Conversation": [
-        "你是誰?", "我是辦公室檔案小助手, 可以回答檔案內容"
-    ]
-}
-
-current_user_message = ""
-past_conversations = []
-selected_conv = None
-selected_row = [1]
-content = ""
-chunk_size = 500
-chunk_overlap = 0
-chain = None
-skiprows = None
-separators = "'\\n\\n', '\\n', ' ', ''"
-is_csv = False
+import asyncio
+from state import *
 
 def on_init(state):
     state.context = context
@@ -38,50 +17,6 @@ def on_init(state):
     state.skiprows = skiprows
     state.is_csv = is_csv
 
-def RAG(state):
-    print(state.content)
-    print(state.separators)
-    notify(state, "info", f"開始處理檔案: {os.path.basename(state.content)}")
-    
-    try:
-        docs = FileLoader.load(state.content)
-        notify(state, "success", f"檔案載入完成，共 {len(docs)} 頁/文件")
-        print(f'File loaded with {len(docs)} documents/pages')
-    except Exception as e:
-        notify(state, "error", f"檔案載入失敗: {str(e)}")
-        return
-
-    notify(state, "info", "正在分割段落...")
-    try:
-        splits = splitter(docs, eval(f"[{state.separators}]"),
-                         int(state.chunk_size),
-                         int(state.chunk_overlap))
-        notify(state, "success", f"分割完成，生成了 {len(splits)} 個片段")
-        print(f"Created {len(splits)} splits")
-    except Exception as e:
-        notify(state, "error", f"分割段落失敗: {str(e)}")
-        return
-
-    notify(state, "info", "正在生成向量資料庫...")
-    try:
-        collection_name = os.path.splitext(os.path.basename(state.content))[0]
-        state.chain = rag(splits, collection_name, state.content)
-        notify(state, "success", "向量資料庫生成完成，可以開始提問！")
-        print('完成')
-    except Exception as e:
-        notify(state, "error", f"轉向量失敗: {str(e)}")
-        print(f"錯誤: {str(e)}")
-
-def csv_file(state):
-    if 'csv' in state.content and state.skiprows is not None:
-        state.is_csv = True
-        state.chain = pandas_agent(state.content, int(state.skiprows))
-    elif not 'csv' in state.content:
-        state.is_csv = False
-    else:
-        notify(state, "error", "請先輸入 CSV 檔案參數")
-
-import asyncio
 def request(state, prompt):
     if state.chain:
         loop = asyncio.get_event_loop()
@@ -119,7 +54,7 @@ def style_conv(state: State, idx: int, row: int) -> str:
         return "gpt_message"
 
 def on_exception(state, function_name: str, ex: Exception) -> None:
-    notify(state, "error", f"An error occured in {function_name}: {ex}")
+    notify(state, "error", f"An error occurred in {function_name}: {ex}")
 
 def reset_chat(state: State) -> None:
     state.past_conversations = state.past_conversations + [[
@@ -127,8 +62,8 @@ def reset_chat(state: State) -> None:
     ]]
     state.conversation = {
         "Conversation": [
-        "你是誰?", 
-        "我是辦公室檔案小助手, 可以回答檔案內容"
+            "你是誰?", 
+            "我是辦公室檔案小助手, 可以回答檔案內容"
         ]
     }
 
@@ -148,17 +83,12 @@ def select_conv(state: State, var_name: str, value) -> None:
         state.context += state.conversation["Conversation"][i + 1]
     state.selected_row = [len(state.conversation["Conversation"]) + 1]
 
-past_prompts = []
-
 page = """
 <|toggle|theme|>
-
 <|layout|columns=300px 1|
-
 <|part|class_name=sidebar|
 # Office AI **Chat**{: .color-primary} # {: .logo-text}
 <|新對話|button|class_name=fullwidth plain|id=reset_app_button|on_action=reset_chat|>
-
 ### 過去的對話記錄 ### {: .h5 .mt2 .mb-half}
 <|{selected_conv}|tree|lov={past_conversations}|class_name=past_prompts_list|multiple|adapter=tree_adapter|on_change=select_conv|>
 |>
@@ -171,21 +101,14 @@ page = """
 <|{chunk_size}|input|label=分割字元數|>
 <|{chunk_overlap}|input|label=重複字元數|>
 <|RAG 處理|button|class_name=small-button plain|id=open_button|on_action=RAG|>
-
 ### CSV 檔案參數 ###
 <|{skiprows}|input|label=忽略行數|>
-
 <br/>
 <|part|class_name=p2 align-item-bottom table|
 <|{conversation}|table|style=style_conv|show_all|selected={selected_row}|rebuild|>
-
 <|part|class_name=card mt1|
 <|{current_user_message}|input|label=你的訊息...|on_action=send_message|class_name=fullwidth|change_delay=-1|>
 |>
 |>
 |>
 """
-
-if __name__ == "__main__":
-    gui = Gui(page=page)
-    gui.run(margin="0em", port=8080, host='0.0.0.0', title="辦公室檔案問答機器人")
