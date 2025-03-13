@@ -1,5 +1,0 @@
-{
-    "default_chunk_size": 500,
-    "default_chunk_overlap": 0,
-    "default_separators": "'\\n\\n', '\\n', ' ', ''"
-}

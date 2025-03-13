@@ -1,5 +1,5 @@
 from taipy.gui import Gui, State, notify
-from rag import RAG, csv_file, request
+import asyncio
 from state import *
 
 def on_init(state):
@@ -16,6 +16,18 @@ def on_init(state):
     state.separators = separators
     state.skiprows = skiprows
     state.is_csv = is_csv
+
+def request(state, prompt):
+    if state.chain:
+        loop = asyncio.get_event_loop()
+        response = loop.run_until_complete(state.chain.ainvoke(prompt))
+        if state.is_csv == True:
+            return response['output']
+        else:
+            return response.replace("\n", "")
+    else:
+        notify(state, "error", "請先上傳檔案")
+        return "請先上傳檔案"
 
 def update_context(state) -> str:
     state.context += f"Human: \n {state.current_user_message}\n\n AI:"
@@ -59,11 +71,11 @@ def tree_adapter(item: list):
     identifier = item[0]
     if len(item[1]["Conversation"]) > 3:
         return (identifier, item[1]["Conversation"][2][:50] + "...")
-    return (identifier, "Empty conversation")
+    return (item[0], "Empty conversation")
 
 def select_conv(state: State, var_name: str, value) -> None:
     print(value)
-    state.conversation = state.past_conversations[value[0]][1]
+    state.conversation = state.past_conversations[value[0][0]][1]
     state.context = "以下是與AI助理的對話。 助理樂於助人、有創意、聰明且非常友善。"\
                     " \n\n人類：你好，你是誰？ 今天我能為您提供什麼幫助？ "
     for i in range(2, len(state.conversation["Conversation"]), 2):
@@ -73,17 +85,13 @@ def select_conv(state: State, var_name: str, value) -> None:
 
 page = """
 <|toggle|theme|>
-
 <|layout|columns=300px 1|
-
 <|part|class_name=sidebar|
 # Office AI **Chat**{: .color-primary} # {: .logo-text}
 <|新對話|button|class_name=fullwidth plain|id=reset_app_button|on_action=reset_chat|>
-
 ### 過去的對話記錄 ### {: .h5 .mt2 .mb-half}
 <|{selected_conv}|tree|lov={past_conversations}|class_name=past_prompts_list|multiple|adapter=tree_adapter|on_change=select_conv|>
 |>
-
 <|part|class_name=sidebar scrollable|
 ### 請選擇檔案 ###
 <|{content}|file_selector|extensions=.docx,.pptx,.csv,.xlsx,.pdf|on_action=csv_file|drop_message=拖至此處上傳|>
@@ -93,14 +101,11 @@ page = """
 <|{chunk_size}|input|label=分割字元數|>
 <|{chunk_overlap}|input|label=重複字元數|>
 <|RAG 處理|button|class_name=small-button plain|id=open_button|on_action=RAG|>
-
 ### CSV 檔案參數 ###
 <|{skiprows}|input|label=忽略行數|>
-
 <br/>
 <|part|class_name=p2 align-item-bottom table|
-<|{conversation}|table|row_class_name=style_conv|show_all|selected={selected_row}|rebuild|>
-
+<|{conversation}|table|style=style_conv|show_all|selected={selected_row}|rebuild|>
 <|part|class_name=card mt1|
 <|{current_user_message}|input|label=你的訊息...|on_action=send_message|class_name=fullwidth|change_delay=-1|>
 |>

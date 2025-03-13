@@ -1,21 +1,40 @@
-from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
+from langchain_openai import AzureChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
-from langchain_openai import AzureChatOpenAI
 from langchain_experimental.agents import create_pandas_dataframe_agent
-from langchain_community.document_loaders import PyPDFLoader
 import pandas as pd
 import os
 import chromadb
 import uuid
 import hashlib
-import math
-from config import get_model_configuration
-from loaders import FileLoader
+from dotenv import load_dotenv
 from taipy.gui import notify
+from loaders import FileLoader
+
+load_dotenv()
+
+configurations = {
+    "gpt-4o": {
+        "model_name": "gpt-4o",
+        "api_base": os.getenv('AZURE_OPENAI_GPT4O_ENDPOINT'),
+        "api_key": os.getenv('AZURE_OPENAI_GPT4O_KEY'),
+        "deployment_name": os.getenv('AZURE_OPENAI_GPT4O_DEPLOYMENT_CHAT'),
+        "api_version": os.getenv('AZURE_OPENAI_GPT4O_VERSION'),
+        "temperature": 0.0,
+    },
+    "text-embedding-ada-002": {
+        "api_base": os.getenv('AZURE_OPENAI_EMBEDDING_ENDPOINT'),
+        "api_key": os.getenv('AZURE_OPENAI_EMBEDDING_KEY'),
+        "deployment_name": os.getenv('AZURE_OPENAI_DEPLOYMENT_EMBEDDING'),
+        "api_version": os.getenv('AZURE_OPENAI_VERSION'),
+        "openai_type": os.getenv('AZURE_OPENAI_TYPE'),
+    }
+}
+
+def get_model_configuration(model_version):
+    return configurations.get(model_version)
 
 def init_model():
     gpt_chat_version = 'gpt-4o'
@@ -56,137 +75,109 @@ def get_file_hash(file_path):
     with open(file_path, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
 
-def generate_db(db_path, collection_name, splits, file_path, state=None):
+def generate_db(db_path, collection_name, splits, file_path):
     gpt_embed_version = 'text-embedding-ada-002'
     gpt_emb_config = get_model_configuration(gpt_embed_version)
     chroma_client = chromadb.PersistentClient(path=db_path)
-
-    current_hash = get_file_hash(file_path)
-
     try:
         collection = chroma_client.get_collection(name=collection_name)
-        stored_hash = collection.metadata.get("file_hash") if collection.metadata else None
-        if stored_hash == current_hash:
-            print(f"Reusing existing collection: {collection_name}")
-            if state is not None:
-                notify(state, "info", "此檔案已存在於資料庫，將重用現有向量資料庫。")
-            return collection, True
-        else:
-            print(f"File content changed, regenerating collection: {collection_name}")
-            chroma_client.delete_collection(name=collection_name)
+        stored_hash_path = os.path.join(db_path, f"{collection_name}_hash.txt")
+        if os.path.exists(stored_hash_path):
+            with open(stored_hash_path, "r") as f:
+                stored_hash = f.read().strip()
+            current_hash = get_file_hash(file_path)
+            if stored_hash == current_hash:
+                print(f"Reusing existing collection: {collection_name}")
+                return collection
+            else:
+                print(f"File content changed, regenerating collection: {collection_name}")
+                chroma_client.delete_collection(name=collection_name)
     except Exception:
         print(f"No existing collection found, creating new one: {collection_name}")
 
     from chromadb.utils import embedding_functions
-    try:
-        openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=gpt_emb_config['api_key'],
-            api_base=gpt_emb_config['api_base'],
-            api_type=gpt_emb_config['openai_type'],
-            api_version=gpt_emb_config['api_version'],
-            deployment_id=gpt_emb_config['deployment_name']
-        )
-        print("OpenAI embedding function initialized successfully with dimension 1536")
-    except Exception as e:
-        print(f"Failed to initialize OpenAI embedding function: {str(e)}")
-        raise ValueError("Azure OpenAI embedding initialization failed. Check .env configuration.")
-
+    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=gpt_emb_config['api_key'],
+        api_base=gpt_emb_config['api_base'],
+        api_type=gpt_emb_config['openai_type'],
+        api_version=gpt_emb_config['api_version'],
+        deployment_id=gpt_emb_config['deployment_name']
+    )
     collection = chroma_client.get_or_create_collection(
         name=collection_name,
-        metadata={"hnsw:space": "cosine", "file_hash": current_hash},
+        metadata={"hnsw:space": "cosine"},
         embedding_function=openai_ef
     )
-    print(f"Collection created with embedding function: {openai_ef.__class__.__name__}")
-    
     texts = [split.page_content for split in splits]
     ids = [str(uuid.uuid4()) for _ in splits]
-    batch_size = min(50, max(10, len(texts) // 100))
-    total_batches = math.ceil(len(texts) / batch_size)
+    batch_size = 10
     for i in range(0, len(texts), batch_size):
         batch_texts = texts[i:i + batch_size]
         batch_ids = ids[i:i + batch_size]
-        if batch_texts:
-            collection.add(documents=batch_texts, ids=batch_ids)
-            if state is not None:
-                current_batch = (i // batch_size) + 1
-                notify(state, "info", f"處理批量 {current_batch}/{total_batches}")
-    return collection, False
+        collection.add(documents=batch_texts, ids=batch_ids)
+    current_hash = get_file_hash(file_path)
+    with open(os.path.join(db_path, f"{collection_name}_hash.txt"), "w") as f:
+        f.write(current_hash)
+    return collection
 
-def rag(splits, collection_name, file_path, state=None):
-    collection, reused = generate_db("./", collection_name, splits, file_path, state)
+def rag(splits, collection_name, file_path):
+    collection = generate_db("./", collection_name, splits, file_path)
     chat_model = init_model()
     prompt, str_parser = init_prompt_parser()
-    
     def retrieve(question):
         results = collection.query(query_texts=[question], n_results=5)
         documents = results.get("documents", [[]])[0]
         return "\n".join(documents)
-    
     chain = (
         {"context": retrieve, "question": RunnablePassthrough()}
         | prompt
         | chat_model
         | str_parser
     )
-    return chain, reused
-
-def RAG(state):
-    notify(state, "info", f"開始處理檔案: {os.path.basename(state.content)}")
-    try:
-        is_csv, docs = FileLoader.load(state.content)
-        if is_csv:
-            notify(state, "info", "已識別為 CSV 檔案，將使用專用處理流程。")
-            csv_file(state)
-            return
-        notify(state, "success", f"檔案載入完成，共 {len(docs)} 頁/文件")
-    except Exception as e:
-        notify(state, "error", f"檔案載入失敗: {str(e)}")
-        return
-
-    notify(state, "info", "正在分割段落...")
-    try:
-        splits = splitter(docs, eval(f"[{state.separators}]"), int(state.chunk_size), int(state.chunk_overlap))
-        notify(state, "success", f"分割完成，生成了 {len(splits)} 個片段")
-    except Exception as e:
-        notify(state, "error", f"分割段落失敗: {str(e)}")
-        return
-
-    notify(state, "info", "正在檢查檔案是否已存在於資料庫...")
-    try:
-        collection_name = os.path.splitext(os.path.basename(state.content))[0]
-        state.chain, reused = rag(splits, collection_name, state.content, state)
-        if not reused:
-            notify(state, "success", "向量資料庫生成完成，可以開始提問！")
-    except Exception as e:
-        notify(state, "error", f"轉向量失敗: {str(e)}")
-
-def csv_file(state):
-    if 'csv' in state.content.lower() and state.skiprows is not None:
-        state.is_csv = True
-        state.chain = pandas_agent(state.content, int(state.skiprows))
-        notify(state, "success", "CSV 檔案處理完成，可以開始提問！")
-    elif 'csv' not in state.content.lower():
-        state.is_csv = False
-        notify(state, "info", "請點擊 'RAG 處理' 按鈕以生成向量資料庫。")
-    else:
-        notify(state, "error", "請先輸入 CSV 檔案參數")
+    return chain
 
 def pandas_agent(path, skiprows):
     df = pd.read_csv(path, skiprows=skiprows)
     agent = create_pandas_dataframe_agent(llm=chat_model,
                                           df=df,
                                           prefix='回答請使用繁體中文',
-                                          agent_type="openai-tools",
-                                          allow_dangerous_code=True)
+                                          agent_type="openai-tools")
     return agent
 
-def request(state, prompt):
-    if state.chain:
-        response = state.chain.invoke(prompt)
-        if state.is_csv:
-            return response['output']
-        else:
-            return response.replace("\n", "")
+def RAG(state):
+    print(state.content)
+    print(state.separators)
+    notify(state, "info", f"開始處理檔案: {os.path.basename(state.content)}")
+    try:
+        docs = FileLoader.load(state.content)
+        notify(state, "success", f"檔案載入完成，共 {len(docs)} 頁/文件")
+        print(f'File loaded with {len(docs)} documents/pages')
+    except Exception as e:
+        notify(state, "error", f"檔案載入失敗: {str(e)}")
+        return
+    notify(state, "info", "正在分割段落...")
+    try:
+        splits = splitter(docs, eval(f"[{state.separators}]"), int(state.chunk_size), int(state.chunk_overlap))
+        notify(state, "success", f"分割完成，生成了 {len(splits)} 個片段")
+        print(f"Created {len(splits)} splits")
+    except Exception as e:
+        notify(state, "error", f"分割段落失敗: {str(e)}")
+        return
+    notify(state, "info", "正在生成向量資料庫...")
+    try:
+        collection_name = os.path.splitext(os.path.basename(state.content))[0]
+        state.chain = rag(splits, collection_name, state.content)
+        notify(state, "success", "向量資料庫生成完成，可以開始提問！")
+        print('完成')
+    except Exception as e:
+        notify(state, "error", f"轉向量失敗: {str(e)}")
+        print(f"錯誤: {str(e)}")
+
+def csv_file(state):
+    if 'csv' in state.content and state.skiprows is not None:
+        state.is_csv = True
+        state.chain = pandas_agent(state.content, int(state.skiprows))
+    elif not 'csv' in state.content:
+        state.is_csv = False
     else:
-        notify(state, "error", "請先上傳檔案")
-        return "請先上傳檔案"
+        notify(state, "error", "請先輸入 CSV 檔案參數")
