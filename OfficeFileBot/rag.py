@@ -9,6 +9,7 @@ import os
 import chromadb
 import uuid
 import hashlib
+import math
 from dotenv import load_dotenv
 from taipy.gui import notify
 from loaders import FileLoader
@@ -75,7 +76,7 @@ def get_file_hash(file_path):
     with open(file_path, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
 
-def generate_db(db_path, collection_name, splits, file_path):
+def generate_db(db_path, collection_name, splits, file_path, state=None):
     gpt_embed_version = 'text-embedding-ada-002'
     gpt_emb_config = get_model_configuration(gpt_embed_version)
     chroma_client = chromadb.PersistentClient(path=db_path)
@@ -110,15 +111,17 @@ def generate_db(db_path, collection_name, splits, file_path):
     )
     texts = [split.page_content for split in splits]
     ids = [str(uuid.uuid4()) for _ in splits]
-    batch_size = 10
+    batch_size = min(50, max(10, len(texts) // 100))
+    total_batches = math.ceil(len(texts) / batch_size)
     for i in range(0, len(texts), batch_size):
         batch_texts = texts[i:i + batch_size]
         batch_ids = ids[i:i + batch_size]
-        collection.add(documents=batch_texts, ids=batch_ids)
-    current_hash = get_file_hash(file_path)
-    with open(os.path.join(db_path, f"{collection_name}_hash.txt"), "w") as f:
-        f.write(current_hash)
-    return collection
+        if batch_texts:
+            collection.add(documents=batch_texts, ids=batch_ids)
+            if state is not None:
+                current_batch = (i // batch_size) + 1
+                notify(state, "info", f"處理批量 {current_batch}/{total_batches}")
+    return collection, False
 
 def rag(splits, collection_name, file_path):
     collection = generate_db("./", collection_name, splits, file_path)
@@ -141,15 +144,18 @@ def pandas_agent(path, skiprows):
     agent = create_pandas_dataframe_agent(llm=chat_model,
                                           df=df,
                                           prefix='回答請使用繁體中文',
-                                          agent_type="openai-tools")
+                                          agent_type="openai-tools",
+                                          allow_dangerous_code=True)
     return agent
 
 def RAG(state):
-    print(state.content)
-    print(state.separators)
     notify(state, "info", f"開始處理檔案: {os.path.basename(state.content)}")
     try:
-        docs = FileLoader.load(state.content)
+        is_csv, docs = FileLoader.load(state.content)
+        if is_csv:
+            notify(state, "info", "已識別為 CSV 檔案，將使用專用處理流程。")
+            csv_file(state)
+            return
         notify(state, "success", f"檔案載入完成，共 {len(docs)} 頁/文件")
         print(f'File loaded with {len(docs)} documents/pages')
     except Exception as e:
@@ -174,10 +180,12 @@ def RAG(state):
         print(f"錯誤: {str(e)}")
 
 def csv_file(state):
-    if 'csv' in state.content and state.skiprows is not None:
+    if 'csv' in state.content.lower() and state.skiprows is not None:
         state.is_csv = True
         state.chain = pandas_agent(state.content, int(state.skiprows))
-    elif not 'csv' in state.content:
+        notify(state, "success", "CSV 檔案處理完成，可以開始提問！")
+    elif 'csv' not in state.content.lower():
         state.is_csv = False
+        notify(state, "info", "請點擊 'RAG 處理' 按鈕以生成向量資料庫。")
     else:
         notify(state, "error", "請先輸入 CSV 檔案參數")
