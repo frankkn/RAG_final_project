@@ -80,19 +80,19 @@ def generate_db(db_path, collection_name, splits, file_path, state=None):
     gpt_embed_version = 'text-embedding-ada-002'
     gpt_emb_config = get_model_configuration(gpt_embed_version)
     chroma_client = chromadb.PersistentClient(path=db_path)
+
+    current_hash = get_file_hash(file_path)
     try:
         collection = chroma_client.get_collection(name=collection_name)
-        stored_hash_path = os.path.join(db_path, f"{collection_name}_hash.txt")
-        if os.path.exists(stored_hash_path):
-            with open(stored_hash_path, "r") as f:
-                stored_hash = f.read().strip()
-            current_hash = get_file_hash(file_path)
-            if stored_hash == current_hash:
-                print(f"Reusing existing collection: {collection_name}")
-                return collection
-            else:
-                print(f"File content changed, regenerating collection: {collection_name}")
-                chroma_client.delete_collection(name=collection_name)
+        stored_hash = collection.metadata.get("file_hash") if collection.metadata else None
+        if stored_hash == current_hash:
+            print(f"Reusing existing collection: {collection_name}")
+            if state is not None:
+                notify(state, "info", "此檔案已存在於資料庫，將重用現有向量資料庫。")
+            return collection, True
+        else:
+            print(f"File content changed, regenerating collection: {collection_name}")
+            chroma_client.delete_collection(name=collection_name)
     except Exception:
         print(f"No existing collection found, creating new one: {collection_name}")
 
@@ -106,7 +106,7 @@ def generate_db(db_path, collection_name, splits, file_path, state=None):
     )
     collection = chroma_client.get_or_create_collection(
         name=collection_name,
-        metadata={"hnsw:space": "cosine"},
+        metadata={"hnsw:space": "cosine", "file_hash": current_hash},
         embedding_function=openai_ef
     )
     texts = [split.page_content for split in splits]
@@ -123,8 +123,8 @@ def generate_db(db_path, collection_name, splits, file_path, state=None):
                 notify(state, "info", f"處理批量 {current_batch}/{total_batches}")
     return collection, False
 
-def rag(splits, collection_name, file_path):
-    collection = generate_db("./", collection_name, splits, file_path)
+def rag(splits, collection_name, file_path, state=None):
+    collection, reused = generate_db("./", collection_name, splits, file_path, state)
     chat_model = init_model()
     prompt, str_parser = init_prompt_parser()
     def retrieve(question):
@@ -137,7 +137,7 @@ def rag(splits, collection_name, file_path):
         | chat_model
         | str_parser
     )
-    return chain
+    return chain, reused
 
 def pandas_agent(path, skiprows):
     df = pd.read_csv(path, skiprows=skiprows)
