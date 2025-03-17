@@ -21,6 +21,12 @@ def web_search(state, web_search_tool):
     print("---WEB SEARCH---")
     question = state["question"]
     documents = state["documents"] if state["documents"] else []
+    if "web_search_count" not in state:
+        state["web_search_count"] = 0
+    state["web_search_count"] += 1
+    if state["web_search_count"] > 2:  # 最多搜尋 2 次
+        print("---MAX SEARCH LIMIT REACHED, NO RELEVANT RESULTS---")
+        return {"documents": [], "question": question}
     docs = web_search_tool.invoke({"query": question})
     web_results = [Document(page_content=d["content"]) for d in docs]
     return {"documents": documents + web_results, "question": question}
@@ -63,15 +69,30 @@ def route_question(state):
     return "web_search" if datasource == "web_search" else "vectorstore"
 
 def route_retrieval(state):
-    return "web_search" if not state["documents"] else "rag_generate"
+    if not state["documents"]:
+        print("---NO RELEVANT DOCUMENTS FOUND, SWITCHING TO PLAIN ANSWER---")
+        return "plain_answer"  # 直接生成通用答案
+    return "rag_generate"
 
 def grade_rag_generation(state):
+    """
+    Returns:
+        "useful": 答案基於文件內容且有效回答了問題，是一個理想的結果。
+        "not useful": 答案基於文件內容，但未有效回答問題，可能需要重新生成或搜尋更多資料。
+        "not supported": 答案是虛構的，不基於文件內容，無法信任。
+    """
     hallucination_grader = get_hallucination_grader()
     answer_grader = get_answer_grader()
     hallucination_score = hallucination_grader.invoke({"documents": state["documents"], "generation": state["generation"]})
     if hallucination_score.binary_score == "no":
         answer_score = answer_grader.invoke({"question": state["question"], "generation": state["generation"]})
-        return "useful" if answer_score.binary_score == "yes" else "not useful"
+        if answer_score.binary_score == "yes":
+            print("  -DECISION: GENERATION IS GROUNDED IN DOCUMENTS AND USEFUL-")
+            return "useful" 
+        else:
+            print("  -DECISION: GENERATION IS GROUNDED IN DOCUMENTS BUT NOT USEFUL-")
+            return "not useful"
+    print("  -DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS-")
     return "not supported"
 
 def build_workflow(retriever, web_search_tool):
@@ -91,7 +112,9 @@ def build_workflow(retriever, web_search_tool):
     workflow.add_conditional_edges(
         "retrieval_grade",
         route_retrieval,
-        {"web_search": "web_search", "rag_generate": "rag_generate"}
+        {"web_search": "web_search", 
+         "rag_generate": "rag_generate",
+         "plain_answer": "plain_answer"}
     )
     workflow.add_conditional_edges(
         "rag_generate",
