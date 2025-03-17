@@ -22,8 +22,8 @@ def main():
         elif 'plain_answer' in output:
             print(output['plain_answer']['generation'])
 
-    #1:什麼是secure boot?如何開啟它?      
-    #2:什麼是WAKE ON LAN?
+    #1:如何設定Asset tag?它跟Service tag有區別嗎?      
+    #2:請問哪些production line支持Boot indicator?
     #3:如何治療PTSD?
     while True:
         question = input("請輸入你的問題（輸入 'exit' 離開）：")

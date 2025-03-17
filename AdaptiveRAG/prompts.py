@@ -26,7 +26,7 @@ def get_plain_prompt():
     """
     return ChatPromptTemplate.from_messages([("system", instruction), ("human", "問題: {question}")])
 
-def get_retrieval_grade_prompt():
+def get_document_grade_prompt():
     instruction = """
     你是一個評分人員，負責評估文件與使用者問題的關聯性。
     如果文件包含與使用者問題相關的關鍵資訊或語意，則評為相關，輸出 'yes'；否則輸出 'no'。

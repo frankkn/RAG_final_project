@@ -4,7 +4,7 @@ from langchain_core.output_parsers import StrOutputParser
 from config import get_model_config
 from prompts import (
     get_route_prompt, get_rag_prompt, get_plain_prompt,
-    get_retrieval_grade_prompt, get_hallucination_grade_prompt, get_answer_grade_prompt
+    get_document_grade_prompt, get_hallucination_grade_prompt, get_answer_grade_prompt
 )
 
 def init_llm(model_version="gpt-4o"):
@@ -46,10 +46,10 @@ def get_plain_chain():
     llm = init_llm()
     return get_plain_prompt() | llm | StrOutputParser()
 
-def get_retrieval_grader():
+def get_document_grader():
     llm = init_llm()
     structured_llm_grader = llm.with_structured_output(GradeDocuments)
-    return get_retrieval_grade_prompt() | structured_llm_grader
+    return get_document_grade_prompt() | structured_llm_grader
 
 def get_hallucination_grader():
     llm = init_llm()

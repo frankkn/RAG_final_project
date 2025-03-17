@@ -4,7 +4,7 @@ from langchain.schema import Document
 from langgraph.graph import END, StateGraph
 from chains import (
     get_question_router, get_rag_chain, get_plain_chain,
-    get_retrieval_grader, get_hallucination_grader, get_answer_grader
+    get_document_grader, get_hallucination_grader, get_answer_grader
 )
 
 class GraphState(TypedDict):
@@ -31,19 +31,34 @@ def web_search(state, web_search_tool):
     web_results = [Document(page_content=d["content"]) for d in docs]
     return {"documents": documents + web_results, "question": question}
 
-def retrieval_grade(state):
+def grade_documents(state):
+    """
+    Determines whether the retrieved documents are relevant to the question.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        state (dict): Updates documents key with only filtered relevant documents
+    """
+
     print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
-    documents = state["documents"]
     question = state["question"]
+    documents = state["documents"]
+
+    # Score each doc
     filtered_docs = []
-    grader = get_retrieval_grader()
+    grader = get_document_grader()
     for d in documents:
-        score = grader.invoke({"question": question, "document": d.page_content})
-        if score.binary_score == "yes":
-            print("  -GRADE: DOCUMENT RELEVANT-")
+        score = grader.invoke(
+            {"question": question, "document": d.page_content}
+        )
+        grade = score.binary_score
+        if grade == "yes":
+            print("---GRADE: DOCUMENT RELEVANT---")
             filtered_docs.append(d)
         else:
-            print("  -GRADE: DOCUMENT NOT RELEVANT-")
+            print("---GRADE: DOCUMENT NOT RELEVANT---")
     return {"documents": filtered_docs, "question": question}
 
 def rag_generate(state):
@@ -62,16 +77,44 @@ def route_question(state):
     router = get_question_router()
     source = router.invoke({"question": state["question"]})
     if "tool_calls" not in source.additional_kwargs:
+        print("---ROUTED TO PLAIN ANSWER---")
         return "plain_answer"
     if len(source.additional_kwargs["tool_calls"]) == 0:
         raise ValueError("Router could not decide source")
     datasource = source.additional_kwargs["tool_calls"][0]["function"]["name"]
-    return "web_search" if datasource == "web_search" else "vectorstore"
+    if datasource == "web_search":
+        print("---ROUTED TO WEB SEARCH---")
+        return "web_search" 
+    else:
+        print("---ROUTED TO VECTORSTORE---")
+        return "vectorstore"
 
-def route_retrieval(state):
+def decide_to_generate(state):
+    """
+    Determines the next step based on the relevance of retrieved documents.
+
+    Evaluates whether there are relevant documents in the state. 
+    If documents are present, proceeds to generate an answer using RAG. 
+    If no relevant documents are found, decides between performing a web search (if search limit not reached) or 
+    generating a plain answer directly.
+
+    Args:
+        state (dict): The current graph state containing 'documents' and optionally 'web_search_count'
+
+    Returns:
+        str: Decision for the next node to call ('rag_generate', 'web_search', or 'plain_answer')
+    """
+
     if not state["documents"]:
-        print("---NO RELEVANT DOCUMENTS FOUND, SWITCHING TO PLAIN ANSWER---")
-        return "plain_answer"  # 直接生成通用答案
+        print("---NO RELEVANT DOCUMENTS FOUND---")
+        # 檢查是否已達搜尋上限
+        if "web_search_count" not in state or state["web_search_count"] < 2:
+            print("---SWITCHING TO WEB SEARCH---")
+            return "web_search"
+        else:
+            print("---MAX SEARCH LIMIT REACHED, SWITCHING TO PLAIN ANSWER---")
+            return "plain_answer"
+    print("---FOUND RELEVANT DOCUMENTS, PROCEEDING TO RAG GENERATION---")
     return "rag_generate"
 
 def grade_rag_generation(state):
@@ -97,21 +140,25 @@ def grade_rag_generation(state):
 
 def build_workflow(retriever, web_search_tool):
     workflow = StateGraph(GraphState)
-    workflow.add_node("web_search", lambda state: web_search(state, web_search_tool))
+
     workflow.add_node("retrieve", lambda state: retrieve(state, retriever))
-    workflow.add_node("retrieval_grade", retrieval_grade)
-    workflow.add_node("rag_generate", rag_generate)
+    workflow.add_node("web_search", lambda state: web_search(state, web_search_tool))
     workflow.add_node("plain_answer", plain_answer)
+
+    workflow.add_node("grade_documents", grade_documents)
+    workflow.add_node("rag_generate", rag_generate)
     
     workflow.set_conditional_entry_point(
         route_question,
-        {"web_search": "web_search", "vectorstore": "retrieve", "plain_answer": "plain_answer"}
+        {"web_search": "web_search",
+         "vectorstore": "retrieve",
+         "plain_answer": "plain_answer"}
     )
-    workflow.add_edge("retrieve", "retrieval_grade")
-    workflow.add_edge("web_search", "retrieval_grade")
+    workflow.add_edge("retrieve", "grade_documents")
+    workflow.add_edge("web_search", "grade_documents")
     workflow.add_conditional_edges(
-        "retrieval_grade",
-        route_retrieval,
+        "grade_documents",
+        decide_to_generate,
         {"web_search": "web_search", 
          "rag_generate": "rag_generate",
          "plain_answer": "plain_answer"}
