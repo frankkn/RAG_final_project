@@ -1,13 +1,21 @@
 from data_loader import load_and_split_documents
-from embeddings import init_embeddings, create_vectorstore
+from embeddings import init_embeddings, get_or_create_vectorstore
 from tools import get_web_search_tool
 from graph import build_workflow
+import os
 
 def main():
-    documents = load_and_split_documents("./example/Y2024H2 Intel Platform_Commercial_BIOS_Setup_Menu_Specification_V2.0.7.pdf")
-    
     embeddings = init_embeddings()
-    retriever = create_vectorstore(documents, embeddings)
+
+    file_path = "./example/Y2024H2 Intel Platform_Commercial_BIOS_Setup_Menu_Specification_V2.0.7.pdf"
+    persist_directory = "./chroma_db"
+
+    # 如果檔案存在，第一次執行時載入並建立資料庫；後續直接使用已有資料庫
+    if os.path.exists(file_path):
+        documents = load_and_split_documents(file_path) if not os.path.exists(persist_directory) else None
+        retriever = get_or_create_vectorstore(embeddings, documents, persist_directory)
+    else:
+        raise FileNotFoundError(f"檔案 {file_path} 不存在，請確認路徑是否正確。")
     
     web_search_tool = get_web_search_tool()
     
