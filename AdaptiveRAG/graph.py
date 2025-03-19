@@ -11,67 +11,88 @@ class GraphState(TypedDict):
     question: str
     generation: str
     documents: List[str]
+    web_search_count: int
 
 def retrieve(state, retriever):
     print("---RETRIEVE---")
-    documents = retriever.invoke(state["question"])
-    return {"documents": documents, "question": state["question"]}
+    try:
+        documents = retriever.invoke(state["question"])
+        print(f"Retrieved {len(documents)} documents")
+        return {
+            "documents": documents,
+            "question": state["question"],
+            "web_search_count": state.get("web_search_count", 0)
+        }
+    except Exception as e:
+        print(f"Error in retrieve: {str(e)}")
+        raise
 
 def web_search(state, web_search_tool):
     print("---WEB SEARCH---")
     question = state["question"]
     documents = state["documents"] if state["documents"] else []
-    if "web_search_count" not in state:
-        state["web_search_count"] = 0
-    state["web_search_count"] += 1
-    if state["web_search_count"] > 2:  # 最多搜尋 2 次
+    web_search_count = state.get("web_search_count", 0) + 1
+    
+    # print(f"  - Current web_search_count: {web_search_count}")
+    if web_search_count > 2:
         print("---MAX SEARCH LIMIT REACHED, NO RELEVANT RESULTS---")
-        return {"documents": [], "question": question}
+        return {
+            "documents": documents,
+            "question": question,
+            "web_search_count": web_search_count
+        }
+    
     docs = web_search_tool.invoke({"query": question})
     web_results = [Document(page_content=d["content"]) for d in docs]
-    return {"documents": documents + web_results, "question": question}
+    return {
+        "documents": documents + web_results,
+        "question": question,
+        "web_search_count": web_search_count
+    }
 
 def grade_documents(state):
-    """
-    Determines whether the retrieved documents are relevant to the question.
-
-    Args:
-        state (dict): The current graph state
-
-    Returns:
-        state (dict): Updates documents key with only filtered relevant documents
-    """
-
     print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
     question = state["question"]
     documents = state["documents"]
+    web_search_count = state.get("web_search_count", 0)
+    # print(f"  - Web search count in grade_documents: {web_search_count}")
 
-    # Score each doc
     filtered_docs = []
     grader = get_document_grader()
     for d in documents:
-        score = grader.invoke(
-            {"question": question, "document": d.page_content}
-        )
+        score = grader.invoke({"question": question, "document": d.page_content})
         grade = score.binary_score
         if grade == "yes":
             print("---GRADE: DOCUMENT RELEVANT---")
             filtered_docs.append(d)
         else:
             print("---GRADE: DOCUMENT NOT RELEVANT---")
-    return {"documents": filtered_docs, "question": question}
+    return {
+        "documents": filtered_docs,
+        "question": question,
+        "web_search_count": web_search_count
+    }
 
 def rag_generate(state):
     print("---GENERATE IN RAG MODE---")
     chain = get_rag_chain()
     generation = chain.invoke({"documents": state["documents"], "question": state["question"]})
-    return {"documents": state["documents"], "question": state["question"], "generation": generation}
+    return {
+        "documents": state["documents"],
+        "question": state["question"],
+        "generation": generation,
+        "web_search_count": state.get("web_search_count", 0)
+    }
 
 def plain_answer(state):
     print("---GENERATE PLAIN ANSWER---")
     chain = get_plain_chain()
     generation = chain.invoke({"question": state["question"]})
-    return {"question": state["question"], "generation": generation}
+    return {
+        "question": state["question"],
+        "generation": generation,
+        "web_search_count": state.get("web_search_count", 0)
+    }
 
 def route_question(state):
     router = get_question_router()
@@ -90,25 +111,12 @@ def route_question(state):
         return "vectorstore"
 
 def decide_to_generate(state):
-    """
-    Determines the next step based on the relevance of retrieved documents.
-
-    Evaluates whether there are relevant documents in the state. 
-    If documents are present, proceeds to generate an answer using RAG. 
-    If no relevant documents are found, decides between performing a web search (if search limit not reached) or 
-    generating a plain answer directly.
-
-    Args:
-        state (dict): The current graph state containing 'documents' and optionally 'web_search_count'
-
-    Returns:
-        str: Decision for the next node to call ('rag_generate', 'web_search', or 'plain_answer')
-    """
-
+    web_search_count = state.get("web_search_count", 0)
+    # print(f"---DECIDE TO GENERATE, Web search count: {web_search_count}---")
+    
     if not state["documents"]:
         print("---NO RELEVANT DOCUMENTS FOUND---")
-        # 檢查是否已達搜尋上限
-        if "web_search_count" not in state or state["web_search_count"] < 2:
+        if web_search_count < 2:
             print("---SWITCHING TO WEB SEARCH---")
             return "web_search"
         else:
@@ -118,12 +126,6 @@ def decide_to_generate(state):
     return "rag_generate"
 
 def grade_rag_generation(state):
-    """
-    Returns:
-        "useful": 答案基於文件內容且有效回答了問題，是一個理想的結果。
-        "not useful": 答案基於文件內容，但未有效回答問題，可能需要重新生成或搜尋更多資料。
-        "not supported": 答案是虛構的，不基於文件內容，無法信任。
-    """
     hallucination_grader = get_hallucination_grader()
     answer_grader = get_answer_grader()
     hallucination_score = hallucination_grader.invoke({"documents": state["documents"], "generation": state["generation"]})
@@ -144,7 +146,6 @@ def build_workflow(retriever, web_search_tool):
     workflow.add_node("retrieve", lambda state: retrieve(state, retriever))
     workflow.add_node("web_search", lambda state: web_search(state, web_search_tool))
     workflow.add_node("plain_answer", plain_answer)
-
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("rag_generate", rag_generate)
     

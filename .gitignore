@@ -1,6 +1,7 @@
 .env
 __pycache__
 *.pdf
+*.xlsx
 chroma.sqlite3
 office_file
 example/

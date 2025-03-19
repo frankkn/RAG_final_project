@@ -7,7 +7,7 @@ import os
 def main():
     embeddings = init_embeddings()
 
-    file_path = "./example/Y2024H2 Intel Platform_Commercial_BIOS_Setup_Menu_Specification_V2.0.7.pdf"
+    file_path = "./example/2025_ML_UNI_20250311.xlsx"
     persist_directory = "./chroma_db"
 
     # 如果檔案存在，第一次執行時載入並建立資料庫；後續直接使用已有資料庫
