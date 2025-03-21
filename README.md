@@ -68,28 +68,37 @@ pip uninstall python-magic
 
 ## 2. AdaptiveRAG 
 
-`AdaptiveRAG` 是一個基於 RAG（Retrieval-Augmented Generation）技術的技術文件問答系統，專為 ASUS Y2024H2 Intel Platform Commercial BIOS Setup Menu Specification 文件設計。它支援 Intel 平台（AlderLake, RaptorLake, LunarLake, ArrowLake, TwinLake）的 BIOS 設定相關問答，並結合向量資料庫檢索和網路搜尋，提供準確且專業的回答。系統會根據問題的性質，選擇使用本地文件檢索、網路搜尋或直接回答，並通過文件評分和答案驗證確保回應品質。
+`AdaptiveRAG` 是一個基於 RAG（Retrieval-Augmented Generation）技術的技術文件問答系統，專為處理 ASUS 的 2025_ML_UNI 多語言字串翻譯表文件設計。它針對 BIOS 設定的技術術語、產品代碼（如 Gaming、Commercial）和多語言支援提供專業問答，並具備自動翻譯功能。系統結合向量資料庫檢索、網路搜尋和直接回答功能，通過動態路由和品質驗證機制確保回應的準確性和實用性。
 
 ### 主要功能
 
-1. BIOS 文件問答：針對 ASUS Y2024H2 Intel Platform Commercial BIOS Setup Menu Specification 文件，提供專業的 BIOS 設定和硬體配置問答。
-2. 動態問題路由：根據問題類型，自動選擇使用向量資料庫檢索（針對 BIOS 相關問題）、網路搜尋（針對通用問題）或直接回答。
-3. 文件評分與驗證：
-    * 檢索到的文件會經過相關性評分，確保只使用與問題相關的資料。
-    * 答案會經過幻覺檢測（hallucination check）和有用性評估，確保回應基於文件且有效。
-4. 持久化資料庫：向量資料庫會持久化儲存，避免每次啟動時重建，加快查詢速度。
-5. 支援範例問題：
-    * 如何設定 Asset Tag？它與 Service Tag 有什麼區別？
-    * 哪些 production line 支援 Boot Indicator？
-    * 非 BIOS 相關問題（例如「如何治療 PTSD？」）會自動轉向網路搜尋。
+1. **BIOS 字串問答**：針對 2025_ML_UNI 文件，提供與 BIOS 字串翻譯、產品代碼和更新規則相關的專業解答。
+2. **動態問題路由**：根據問題類型，自動選擇以下路徑：
+   - **向量資料庫檢索**：用於 BIOS 字串翻譯、產品代碼管理和多語言支援相關問題。
+   - **網路搜尋**：用於非 BIOS 相關的通用問題。
+   - **直接回答**：用於簡單或無需檢索的問題。
+3. **文件評分與驗證**：
+   - 檢索到的文件經過相關性評分，確保與問題匹配。
+   - 生成的答案通過幻覺檢測（hallucination check）和有用性評估，確保基於文件且有效。
+4. **持久化資料庫**：向量資料庫儲存於 `./chroma_db`，支持高效查詢且無需每次重建。
+5. **自動翻譯功能**：針對 `Lost_String` 分頁，根據英文（en-US）內容補全缺失的語言翻譯，並將結果儲存至新檔案。
+6. **支援範例問題**：
+   - 「如何將某個 ASUS Token 翻譯成日文？」
+   - 「Gaming 產品代碼有哪些多語言支援？」
+   - 「什麼是 AMI Token 的作用？」
+   - 非 BIOS 問題（如「今天的日期是什麼？」）會轉向網路搜尋或直接回答。
 
 ### 使用技術
 
-* LangChain & LangGraph：用於構建 RAG 工作流程，實現檢索、生成和路由邏輯。
-* Chroma 向量資料庫：儲存和檢索文件嵌入（embeddings），支援高效的相似性搜索。
-* Azure OpenAI：提供嵌入生成（text-embedding-ada-002）和語言模型（gpt-4o）功能。
-* Tavily Search：用於網路搜尋，補充本地文件無法回答的問題。
-* Python 函式庫：包括 PyPDFLoader（PDF 解析）、RecursiveCharacterTextSplitter（文件分割）等。
+* **LangChain & LangGraph**：構建 RAG 工作流程，實現檢索、生成、路由和品質驗證邏輯。
+* **Chroma 向量資料庫**：儲存和檢索文件嵌入（embeddings），支持高效相似性搜索。
+* **Azure OpenAI**：
+  - 嵌入生成：使用 `text-embedding-ada-002` 模型。
+  - 語言模型：使用 `gpt-4o` 進行問答和翻譯。
+* **Tavily Search**：提供網路搜尋功能，補充本地文件無法回答的問題。
+* **Python 函式庫**：
+  - `pandas`：處理 Excel 文件（如 2025_ML_UNI）。
+  - `os` 和 `dotenv`：管理環境變數和檔案路徑。
 
 ### 安裝與運行
 
@@ -98,17 +107,24 @@ cd AdaptiveRAG
 python main.py
 ```
 
-第一次運行：
-程式會載入 ./example/Y2024H2 Intel Platform_Commercial_BIOS_Setup_Menu_Specification_V2.0.7.pdf 並建立持久化資料庫（儲存在 ./chroma_db）。
-之後的運行會直接使用已建立的資料庫。
+**第一次運行**：
+- 程式會載入 `./example/2025_ML_UNI_20250311.xlsx`，並建立持久化向量資料庫（儲存於 `./chroma_db`）。
+- 後續運行將直接使用現有資料庫，提升啟動速度。
+
+**運行選項**：
+- 輸入 `1`：提問問題並獲得回應。
+- 輸入 `2`：自動翻譯 2025_ML_UNI 文件中 `Lost_String` 分頁的缺失欄位，並儲存至新檔案（如 `2025_ML_UNI_20250311_translated.xlsx`）。
+- 輸入 `3` 或 `exit`：結束程式。
 
 ### 注意事項
 
-* 確保 ./example/Y2024H2 Intel Platform_Commercial_BIOS_Setup_Menu_Specification_V2.0.7.pdf 檔案存在，否則程式會報錯。
-* 本專案針對 BIOS 相關問題最佳化，其他問題可能會轉向網路搜尋，回答品質可能因網路資料而異。
+* 確保 `./example/2025_ML_UNI_20250311.xlsx` 檔案存在，否則程式會報錯並拋出 `FileNotFoundError`。
+* 系統針對 BIOS 字串翻譯和產品代碼管理問題最佳化，非相關問題可能依賴網路搜尋，回答品質受網路資料影響。
+* 自動翻譯功能僅處理 `Lost_String` 分頁，且需 en-US 欄位有值，否則該行會被跳過並顯示警告。
 
 ### 未來計劃
 
-* 支持多檔案同時上傳與分析。
-* 優化網路搜尋結果的篩選，進一步提升回答品質。
-* 提供更友善的使用者界面（例如 GUI 或 Web 界面）。
+* 支持多檔案同時上傳與分析，提升處理能力。
+* 優化網路搜尋結果的篩選邏輯，提高非文件問題的回答品質。
+* 開發圖形使用者界面（GUI）或 Web 界面，改善使用者體驗。
+* 增加對更多語言和文件格式的支持，例如 PDF 或 Word 文件。
