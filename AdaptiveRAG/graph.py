@@ -10,13 +10,18 @@ from chains import (
 class GraphState(TypedDict):
     question: str
     generation: str
-    documents: List[str]
+    documents: List[dict]
     web_search_count: int
 
 def retrieve(state, retriever):
     print("---RETRIEVE---")
     try:
-        documents = retriever.invoke(state["question"])
+        # retriever.invoke() 返回的是字符串列表
+        results = retriever.invoke(state["question"])
+        documents = []
+        for result in results:
+            # 將字符串和元數據包裝成字典
+            documents.append({"text": result, "metadata": result.metadata if hasattr(result, "metadata") else {}})
         print(f"Retrieved {len(documents)} documents")
         return {
             "documents": documents,
@@ -33,7 +38,6 @@ def web_search(state, web_search_tool):
     documents = state["documents"] if state["documents"] else []
     web_search_count = state.get("web_search_count", 0) + 1
     
-    # print(f"  - Current web_search_count: {web_search_count}")
     if web_search_count > 2:
         print("---MAX SEARCH LIMIT REACHED, NO RELEVANT RESULTS---")
         return {
@@ -43,7 +47,8 @@ def web_search(state, web_search_tool):
         }
     
     docs = web_search_tool.invoke({"query": question})
-    web_results = [Document(page_content=d["content"]) for d in docs]
+    # 將網路搜尋結果轉換為與 vectorstore 一致的字典格式
+    web_results = [{"text": d["content"], "metadata": {}} for d in docs]
     return {
         "documents": documents + web_results,
         "question": question,
@@ -55,12 +60,12 @@ def grade_documents(state):
     question = state["question"]
     documents = state["documents"]
     web_search_count = state.get("web_search_count", 0)
-    # print(f"  - Web search count in grade_documents: {web_search_count}")
 
     filtered_docs = []
     grader = get_document_grader()
     for d in documents:
-        score = grader.invoke({"question": question, "document": d.page_content})
+        # 使用 d["text"] 代替 d.page_content
+        score = grader.invoke({"question": question, "document": d["text"]})
         grade = score.binary_score
         if grade == "yes":
             print("---GRADE: DOCUMENT RELEVANT---")
@@ -76,7 +81,9 @@ def grade_documents(state):
 def rag_generate(state):
     print("---GENERATE IN RAG MODE---")
     chain = get_rag_chain()
-    generation = chain.invoke({"documents": state["documents"], "question": state["question"]})
+    # 提取 documents 中的 text 字段
+    doc_texts = [d["text"] for d in state["documents"]]
+    generation = chain.invoke({"documents": doc_texts, "question": state["question"]})
     return {
         "documents": state["documents"],
         "question": state["question"],
@@ -128,7 +135,9 @@ def decide_to_generate(state):
 def grade_rag_generation(state):
     hallucination_grader = get_hallucination_grader()
     answer_grader = get_answer_grader()
-    hallucination_score = hallucination_grader.invoke({"documents": state["documents"], "generation": state["generation"]})
+    # 提取 documents 中的 text 字段
+    doc_texts = [d["text"] for d in state["documents"]]
+    hallucination_score = hallucination_grader.invoke({"documents": doc_texts, "generation": state["generation"]})
     if hallucination_score.binary_score == "no":
         answer_score = answer_grader.invoke({"question": state["question"], "generation": state["generation"]})
         if answer_score.binary_score == "yes":
