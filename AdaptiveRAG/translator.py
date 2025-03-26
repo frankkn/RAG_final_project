@@ -1,6 +1,33 @@
 from langchain_openai import AzureChatOpenAI
 from config import get_model_config
 from langchain_core.prompts import ChatPromptTemplate
+import language_tool_python
+from langchain_core.tools import Tool
+
+grammar_tool = language_tool_python.LanguageTool('en-US')
+grammar_tool.disable_spellchecking()
+
+TECH_TERMS = {
+    "Enter", "ESC", "F1", "F2", "F3", "F4", "Arrows", "+/-", "<K>", "<M>", "\n"
+}
+
+def check_grammar(text):
+    """
+    檢查文本的文法（不檢查拼字），返回是否有錯誤以及修正後的文本。
+    返回值：(是否有錯誤, 原始文本, 修正後文本)
+    """
+    matches = grammar_tool.check(text)
+    if not matches:  # 沒有錯誤
+        return False, text, text
+    
+    # 過濾掉技術術語相關的錯誤
+    filtered_matches = [m for m in matches if m.matchedText not in TECH_TERMS]
+    if not filtered_matches:  # 過濾後無錯誤
+        return False, text, text
+    
+    # 若有非技術術語的錯誤，進行修正
+    corrected_text = grammar_tool.correct(text)
+    return True, text, corrected_text
 
 def init_translator(model_version="gpt-4o"):
     config = get_model_config(model_version)
@@ -58,6 +85,10 @@ def translate_missing_fields(data_list, languages=None):
         
         # 3. 獲取 row 號碼（從 metadata 中提取）
         row_number = data["metadata"]["row"]
+        has_errors, original_text, corrected_text = check_grammar(en_us_text)
+        if has_errors:
+            print(f"Revise Row {row_number} en-US from '{original_text}' to '{corrected_text}'")
+            en_us_text = corrected_text
         
         # 4. 為所有缺失的語言欄位進行翻譯（若已有值則跳過）
         for lang in languages:
