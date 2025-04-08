@@ -149,6 +149,15 @@ def grade_rag_generation(state):
     print("  -DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS-")
     return "not supported"
 
+def decide_after_not_useful(state):
+    web_search_count = state.get("web_search_count", 0)
+    if web_search_count >= 2:
+        print("---搜尋次數已達上限，切換到簡單回答---")
+        return {"next_step": "plain_answer"}
+    else:
+        print("---切換到網路搜尋---")
+        return {"next_step": "web_search"}
+
 def build_workflow(retriever, web_search_tool):
     workflow = StateGraph(GraphState)
 
@@ -157,6 +166,7 @@ def build_workflow(retriever, web_search_tool):
     workflow.add_node("plain_answer", plain_answer)
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("rag_generate", rag_generate)
+    workflow.add_node("decide_after_not_useful", decide_after_not_useful)
     
     workflow.set_conditional_entry_point(
         route_question,
@@ -176,8 +186,20 @@ def build_workflow(retriever, web_search_tool):
     workflow.add_conditional_edges(
         "rag_generate",
         grade_rag_generation,
-        {"not supported": "rag_generate", "not useful": "web_search", "useful": END}
+        {"not supported": "rag_generate", 
+         "not useful": "decide_after_not_useful", 
+         "useful": END
+         }
     )
+    workflow.add_conditional_edges(
+        "decide_after_not_useful",
+        lambda state: state.get("next_step"),
+        {
+            "web_search": "web_search",
+            "plain_answer": "plain_answer"
+        }
+    )
+
     workflow.add_edge("plain_answer", END)
     
     return workflow.compile()

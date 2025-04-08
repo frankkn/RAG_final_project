@@ -12,7 +12,6 @@ def main():
     persist_directory = "./chroma_db"
     output_file_path = "./example/2025_ML_UNI_20250311_translated.xlsx"
 
-    # 載入數據
     if os.path.exists(file_path):
         data_list = load_excel_data(file_path)
         retriever = get_or_create_vectorstore(embeddings, data_list, persist_directory)
