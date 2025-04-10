@@ -81,9 +81,10 @@ def grade_documents(state):
 def rag_generate(state):
     print("---GENERATE IN RAG MODE---")
     chain = get_rag_chain()
-    # 提取 documents 中的 text 字段
     doc_texts = [d["text"] for d in state["documents"]]
+    # print(f"Documents passed to chain: {doc_texts}")
     generation = chain.invoke({"documents": doc_texts, "question": state["question"]})
+    # print(f"Generated answer: {generation}")
     return {
         "documents": state["documents"],
         "question": state["question"],

@@ -95,4 +95,4 @@ def get_or_create_vectorstore(embeddings, data_list=None, persist_directory="./c
             embedding_function=embeddings
         )
     
-    return vectorstore.as_retriever(search_kwargs={"k": 10})
+    return vectorstore.as_retriever(search_kwargs={"k": 20})

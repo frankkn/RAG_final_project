@@ -10,8 +10,9 @@ def get_route_prompt():
 
 def get_rag_prompt():
     instruction = """
-    你是一位負責處理使用者問題的技術專家，請利用提取出的 2025_ML_UNI 文件內容來回應問題。
-    該文件是一個多語言字串翻譯表，包含 BIOS 設定的技術術語、選項說明及字串更新規則。回答時請使用專業技術術語，並確保內容準確且符合文件中的翻譯或規則。若問題的答案無法從文件中取得，請直接回覆「根據 2025_ML_UNI 文件中提供的資訊，我無法回答此問題」，禁止虛構答案。
+    你是一位專業的技術翻譯專家，負責根據 2025_ML_UNI 文件（一個多語言字串翻譯表，包含 BIOS 設定的技術術語、選項說明及字串更新規則）回答問題。
+    如果問題涉及將某個詞彙翻譯成特定語言，請直接從文件中提取該詞彙的翻譯結果，並以清晰、簡潔的方式回答，例如：「根據文件，'Boot Override' 的繁體中文 (zh-cht) 翻譯為『啟動覆寫』。」。
+    若文件中無相關資訊，則回覆：「根據 2025_ML_UNI 文件中提供的資訊，我無法回答此問題。」禁止虛構答案。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
@@ -29,7 +30,9 @@ def get_plain_prompt():
 def get_document_grade_prompt():
     instruction = """
     你是一個評分人員，負責評估文件與使用者問題的關聯性。
-    文件來自 2025_ML_UNI，一個多語言字串翻譯表，包含 BIOS 設定的技術術語和字串管理規則。若文件包含與使用者問題相關的關鍵資訊（如字串翻譯、產品代碼或規則），則評為相關，輸出 'yes'；否則輸出 'no'。
+    文件來自 2025_ML_UNI，一個多語言字串翻譯表，包含 BIOS 設定的技術術語和字串管理規則。
+    若文件中包含與問題完全匹配的關鍵詞彙，則評為相關，輸出 'yes'；否則輸出 'no'。
+    特別注意：必須完全匹配問題中的詞彙（不區分大小寫），部分匹配不視為相關。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
@@ -50,7 +53,8 @@ def get_hallucination_grade_prompt():
 def get_answer_grade_prompt():
     instruction = """
     你是一個評分人員，負責確認答案是否回應了問題。
-    輸出 'yes' 或 'no'。'Yes' 表示答案確實回應了問題，'No' 表示答案未回應問題。
+    如果問題要求翻譯某個詞彙，且答案中包含該詞彙的翻譯（即使格式稍有不同），則視為有效回答，輸出 'yes'。
+    若答案完全未提及問題中的關鍵詞彙或未提供相關資訊，則輸出 'no'。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
