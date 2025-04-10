@@ -11,8 +11,12 @@ def get_route_prompt():
 def get_rag_prompt():
     instruction = """
     你是一位專業的技術翻譯專家，負責根據 2025_ML_UNI 文件（一個多語言字串翻譯表，包含 BIOS 設定的技術術語、選項說明及字串更新規則）回答問題。
-    如果問題涉及將某個詞彙翻譯成特定語言，請直接從文件中提取該詞彙的翻譯結果，並以清晰、簡潔的方式回答，例如：「根據文件，'Boot Override' 的繁體中文 (zh-cht) 翻譯為『啟動覆寫』。」。
-    若文件中無相關資訊，則回覆：「根據 2025_ML_UNI 文件中提供的資訊，我無法回答此問題。」禁止虛構答案。
+    如果問題要求將某個詞彙翻譯成特定語言：
+    - 若文件中包含該詞彙的直接翻譯（例如 'Power Saving Mode'），提取並回答，例如：「根據文件，'Power Saving Mode' 的日文 (ja-JP) 翻譯為『省電力モード』。」
+    - 若文件中無完全匹配的詞彙，但包含語義相近的詞彙（例如 'Power Saving' 翻譯為『省電力』，'Mode' 翻譯為『モード』），則根據語義推斷並回答，例如：「根據文件中語義相近的詞彙推斷，'Power Saving Mode' 的日文 (ja-JP) 翻譯為『省電力モード』。」
+    - 若文件中無相關詞彙，但 Web Search 結果中提供了相關翻譯，則使用 Web Search 結果並回答，例如：「根據 Web Search 結果，'Power Saving Mode' 的日文 (ja-JP) 翻譯為『省電力モード』。」
+    - 若文件和 Web Search 結果均無相關資訊，則回覆：「根據 2025_ML_UNI 文件和 Web Search 結果，我無法回答此問題。」
+    特別注意：若進行語義推斷，必須明確註明推斷來源。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
@@ -31,8 +35,8 @@ def get_document_grade_prompt():
     instruction = """
     你是一個評分人員，負責評估文件與使用者問題的關聯性。
     文件來自 2025_ML_UNI，一個多語言字串翻譯表，包含 BIOS 設定的技術術語和字串管理規則。
-    若文件中包含與問題完全匹配的關鍵詞彙，則評為相關，輸出 'yes'；否則輸出 'no'。
-    特別注意：必須完全匹配問題中的詞彙（不區分大小寫），部分匹配不視為相關。
+    若文件中包含與問題完全匹配的關鍵詞彙（例如 'Power Saving Mode'），或包含語義相近的詞彙（例如 'Power Saving'、'Mode' 等與省電模式相關的術語），則評為相關，輸出 'yes'；否則輸出 'no'。
+    特別注意：若問題涉及翻譯，文件中只要包含相關詞彙的翻譯（例如 'Power Saving' 翻譯為『省電力』），即可視為相關。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
@@ -43,7 +47,10 @@ def get_hallucination_grade_prompt():
     instruction = """
     你是一個評分人員，負責確認 LLM 的回應是否虛構。
     以下提供 2025_ML_UNI 文件內容（多語言字串翻譯表，包含 BIOS 設定的技術術語和字串管理規則）與對應的 LLM 回應。請檢查回應是否基於文件內容。
-    輸出 'yes' 表示回應是虛構的，未基於文件內容；'no' 表示回應未虛構，基於文件內容得出。
+    若回應滿足以下任一條件，則視為基於文件，輸出 'no'：
+    - 回應直接引用文件中的翻譯（例如 'Power Saving Mode' 翻譯為『省電力モード』）。
+    - 回應基於文件中語義相近的詞彙進行推斷（例如文件中包含 'Power Saving' 翻譯為『省電力』，'Mode' 翻譯為『モード』，則推斷 'Power Saving Mode' 為『省電力モード』）。
+    若回應完全未基於文件內容（例如虛構翻譯或無相關詞彙支持），則視為虛構，輸出 'yes'。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
@@ -52,9 +59,13 @@ def get_hallucination_grade_prompt():
 
 def get_answer_grade_prompt():
     instruction = """
-    你是一個評分人員，負責確認答案是否回應了問題。
-    如果問題要求翻譯某個詞彙，且答案中包含該詞彙的翻譯（即使格式稍有不同），則視為有效回答，輸出 'yes'。
-    若答案完全未提及問題中的關鍵詞彙或未提供相關資訊，則輸出 'no'。
+    你是一個評分人員，負責評估生成的回答是否對使用者問題有用。
+    問題可能涉及技術術語翻譯（例如 'Power Saving Mode' 的日文翻譯）。
+    若回答滿足以下任一條件，則評為有用，輸出 'yes'：
+    - 回答提供了問題中詞彙的直接翻譯（例如 'Power Saving Mode' 翻譯為『省電力モード』）。
+    - 回答基於文件中語義相近的詞彙進行推斷，並註明推斷來源（例如 '根據文件中語義相近的詞彙推斷，Power Saving Mode 的日文翻譯為『省電力モード』'）。
+    - 回答基於 Web Search 結果提供了合理的翻譯，並註明來源。
+    若回答與問題無關、翻譯錯誤或未提供任何翻譯，則評為無用，輸出 'no'。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),

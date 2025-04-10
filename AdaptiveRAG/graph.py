@@ -12,21 +12,22 @@ class GraphState(TypedDict):
     generation: str
     documents: List[dict]
     web_search_count: int
+    rag_retry_count: int
+    next_step: str
 
 def retrieve(state, retriever):
     print("---RETRIEVE---")
     try:
-        # retriever.invoke() 返回的是字符串列表
         results = retriever.invoke(state["question"])
         documents = []
         for result in results:
-            # 將字符串和元數據包裝成字典
             documents.append({"text": result, "metadata": result.metadata if hasattr(result, "metadata") else {}})
         print(f"Retrieved {len(documents)} documents")
         return {
             "documents": documents,
             "question": state["question"],
-            "web_search_count": state.get("web_search_count", 0)
+            "web_search_count": state.get("web_search_count", 0),
+            "rag_retry_count": state.get("rag_retry_count", 0)
         }
     except Exception as e:
         print(f"Error in retrieve: {str(e)}")
@@ -43,16 +44,20 @@ def web_search(state, web_search_tool):
         return {
             "documents": documents,
             "question": question,
-            "web_search_count": web_search_count
+            "web_search_count": web_search_count,
+            "rag_retry_count": state.get("rag_retry_count", 0)
         }
     
-    docs = web_search_tool.invoke({"query": question})
-    # 將網路搜尋結果轉換為與 vectorstore 一致的字典格式
+    enhanced_query = f"{question} Japanese translation site:*.edu site:*.org site:*.gov -inurl:(signup | login)"
+    if "translation" in question.lower():
+        enhanced_query += " BIOS terminology OR technical terms"
+    docs = web_search_tool.invoke({"query": enhanced_query})
     web_results = [{"text": d["content"], "metadata": {}} for d in docs]
     return {
         "documents": documents + web_results,
         "question": question,
-        "web_search_count": web_search_count
+        "web_search_count": web_search_count,
+        "rag_retry_count": state.get("rag_retry_count", 0)
     }
 
 def grade_documents(state):
@@ -64,7 +69,6 @@ def grade_documents(state):
     filtered_docs = []
     grader = get_document_grader()
     for d in documents:
-        # 使用 d["text"] 代替 d.page_content
         score = grader.invoke({"question": question, "document": d["text"]})
         grade = score.binary_score
         if grade == "yes":
@@ -75,22 +79,60 @@ def grade_documents(state):
     return {
         "documents": filtered_docs,
         "question": question,
-        "web_search_count": web_search_count
+        "web_search_count": web_search_count,
+        "rag_retry_count": state.get("rag_retry_count", 0)
     }
 
 def rag_generate(state):
     print("---GENERATE IN RAG MODE---")
     chain = get_rag_chain()
     doc_texts = [d["text"] for d in state["documents"]]
-    # print(f"Documents passed to chain: {doc_texts}")
     generation = chain.invoke({"documents": doc_texts, "question": state["question"]})
-    # print(f"Generated answer: {generation}")
     return {
         "documents": state["documents"],
         "question": state["question"],
         "generation": generation,
-        "web_search_count": state.get("web_search_count", 0)
+        "web_search_count": state.get("web_search_count", 0),
+        "rag_retry_count": state.get("rag_retry_count", 0)
     }
+
+def decide_rag_retry(state):
+    print("---DECIDE RAG RETRY---")
+    retry_count = state.get("rag_retry_count", 0) + 1
+    max_retries = 3
+    web_search_count = state.get("web_search_count", 0)
+
+    if retry_count >= max_retries:
+        if web_search_count < 2:  # 如果 Web Search 次數未達上限，切換到 Web Search
+            print(f"---MAX RETRIES ({max_retries}) REACHED, SWITCHING TO WEB SEARCH---")
+            return {
+                "documents": state["documents"],
+                "question": state["question"],
+                "generation": state["generation"],
+                "web_search_count": web_search_count,
+                "rag_retry_count": 0,  # 重置計數
+                "next_step": "web_search"
+            }
+        else:  # 如果 Web Search 次數已達上限，切換到 Plain Answer
+            print(f"---MAX RETRIES ({max_retries}) REACHED AND MAX WEB SEARCH LIMIT REACHED, SWITCHING TO PLAIN ANSWER---")
+            return {
+                "documents": state["documents"],
+                "question": state["question"],
+                "generation": state["generation"],
+                "web_search_count": web_search_count,
+                "rag_retry_count": 0,  # 重置計數
+                "next_step": "plain_answer"
+            }
+    else:
+        print(f"---RETRYING RAG GENERATION ({retry_count}/{max_retries})---")
+        return {
+            "documents": state["documents"],
+            "question": state["question"],
+            "generation": state["generation"],
+            "web_search_count": web_search_count,
+            "rag_retry_count": retry_count,
+            "next_step": "rag_generate"
+        }
 
 def plain_answer(state):
     print("---GENERATE PLAIN ANSWER---")
@@ -99,7 +141,8 @@ def plain_answer(state):
     return {
         "question": state["question"],
         "generation": generation,
-        "web_search_count": state.get("web_search_count", 0)
+        "web_search_count": state.get("web_search_count", 0),
+        "rag_retry_count": 0
     }
 
 def route_question(state):
@@ -113,14 +156,13 @@ def route_question(state):
     datasource = source.additional_kwargs["tool_calls"][0]["function"]["name"]
     if datasource == "web_search":
         print("---ROUTED TO WEB SEARCH---")
-        return "web_search" 
+        return "web_search"
     else:
         print("---ROUTED TO VECTORSTORE---")
         return "vectorstore"
 
 def decide_to_generate(state):
     web_search_count = state.get("web_search_count", 0)
-    # print(f"---DECIDE TO GENERATE, Web search count: {web_search_count}---")
     
     if not state["documents"]:
         print("---NO RELEVANT DOCUMENTS FOUND---")
@@ -136,19 +178,20 @@ def decide_to_generate(state):
 def grade_rag_generation(state):
     hallucination_grader = get_hallucination_grader()
     answer_grader = get_answer_grader()
-    # 提取 documents 中的 text 字段
     doc_texts = [d["text"] for d in state["documents"]]
     hallucination_score = hallucination_grader.invoke({"documents": doc_texts, "generation": state["generation"]})
+
     if hallucination_score.binary_score == "no":
         answer_score = answer_grader.invoke({"question": state["question"], "generation": state["generation"]})
         if answer_score.binary_score == "yes":
             print("  -DECISION: GENERATION IS GROUNDED IN DOCUMENTS AND USEFUL-")
-            return "useful" 
+            return "useful"
         else:
             print("  -DECISION: GENERATION IS GROUNDED IN DOCUMENTS BUT NOT USEFUL-")
             return "not useful"
-    print("  -DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS-")
-    return "not supported"
+    else:
+        print("  -DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS-")
+        return "not_grounded"
 
 def decide_after_not_useful(state):
     web_search_count = state.get("web_search_count", 0)
@@ -159,6 +202,17 @@ def decide_after_not_useful(state):
         print("---切換到網路搜尋---")
         return {"next_step": "web_search"}
 
+def decide_next_step(state):
+    next_step = state.get("next_step")
+    if next_step == "rag_generate":
+        return "rag_generate"
+    elif next_step == "web_search":
+        return "web_search"
+    elif next_step == "plain_answer":
+        return "plain_answer"
+    else:
+        raise ValueError(f"Unknown next step: {next_step}")
+
 def build_workflow(retriever, web_search_tool):
     workflow = StateGraph(GraphState)
 
@@ -167,6 +221,7 @@ def build_workflow(retriever, web_search_tool):
     workflow.add_node("plain_answer", plain_answer)
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("rag_generate", rag_generate)
+    workflow.add_node("decide_rag_retry", decide_rag_retry)
     workflow.add_node("decide_after_not_useful", decide_after_not_useful)
     
     workflow.set_conditional_entry_point(
@@ -187,10 +242,20 @@ def build_workflow(retriever, web_search_tool):
     workflow.add_conditional_edges(
         "rag_generate",
         grade_rag_generation,
-        {"not supported": "rag_generate", 
-         "not useful": "decide_after_not_useful", 
-         "useful": END
-         }
+        {
+            "not_grounded": "decide_rag_retry",
+            "not useful": "decide_after_not_useful", 
+            "useful": END
+        }
+    )
+    workflow.add_conditional_edges(
+        "decide_rag_retry",
+        decide_next_step,
+        {
+            "rag_generate": "rag_generate",
+            "web_search": "web_search",
+            "plain_answer": "plain_answer"
+        }
     )
     workflow.add_conditional_edges(
         "decide_after_not_useful",
