@@ -39,7 +39,7 @@ def web_search(state, web_search_tool):
     documents = state["documents"] if state["documents"] else []
     web_search_count = state.get("web_search_count", 0) + 1
     
-    if web_search_count > 2:
+    if web_search_count > 1:
         print("---MAX SEARCH LIMIT REACHED, NO RELEVANT RESULTS---")
         return {
             "documents": documents,
@@ -103,7 +103,7 @@ def decide_rag_retry(state):
     web_search_count = state.get("web_search_count", 0)
 
     if retry_count >= max_retries:
-        if web_search_count < 2:  # 如果 Web Search 次數未達上限，切換到 Web Search
+        if web_search_count < 1:  # 如果 Web Search 次數未達上限，切換到 Web Search
             print(f"---MAX RETRIES ({max_retries}) REACHED, SWITCHING TO WEB SEARCH---")
             return {
                 "documents": state["documents"],
@@ -166,7 +166,7 @@ def decide_to_generate(state):
     
     if not state["documents"]:
         print("---NO RELEVANT DOCUMENTS FOUND---")
-        if web_search_count < 2:
+        if web_search_count < 1:
             print("---SWITCHING TO WEB SEARCH---")
             return "web_search"
         else:
@@ -195,7 +195,7 @@ def grade_rag_generation(state):
 
 def decide_after_not_useful(state):
     web_search_count = state.get("web_search_count", 0)
-    if web_search_count >= 2:
+    if web_search_count >= 1:
         print("---搜尋次數已達上限，切換到簡單回答---")
         return {"next_step": "plain_answer"}
     else:

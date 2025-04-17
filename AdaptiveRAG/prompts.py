@@ -35,8 +35,6 @@ def get_document_grade_prompt():
     instruction = """
     你是一個評分人員，負責評估文件與使用者問題的關聯性。
     文件來自 2025_ML_UNI，一個多語言字串翻譯表，包含 BIOS 設定的技術術語和字串管理規則。
-    若文件中包含與問題完全匹配的關鍵詞彙（例如 'Power Saving Mode'），或包含語義相近的詞彙（例如 'Power Saving'、'Mode' 等與省電模式相關的術語），則評為相關，輸出 'yes'；否則輸出 'no'。
-    特別注意：若問題涉及翻譯，文件中只要包含相關詞彙的翻譯（例如 'Power Saving' 翻譯為『省電力』），即可視為相關。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
@@ -60,12 +58,13 @@ def get_hallucination_grade_prompt():
 def get_answer_grade_prompt():
     instruction = """
     你是一個評分人員，負責評估生成的回答是否對使用者問題有用。
-    問題可能涉及技術術語翻譯（例如 'Power Saving Mode' 的日文翻譯）。
+    問題可能涉及技術術語翻譯（例如 'Power Saving Mode' 的日文翻譯）或文件支援的語言列表。
     若回答滿足以下任一條件，則評為有用，輸出 'yes'：
     - 回答提供了問題中詞彙的直接翻譯（例如 'Power Saving Mode' 翻譯為『省電力モード』）。
     - 回答基於文件中語義相近的詞彙進行推斷，並註明推斷來源（例如 '根據文件中語義相近的詞彙推斷，Power Saving Mode 的日文翻譯為『省電力モード』'）。
     - 回答基於 Web Search 結果提供了合理的翻譯，並註明來源。
-    若回答與問題無關、翻譯錯誤或未提供任何翻譯，則評為無用，輸出 'no'。
+    - 回答提供了與問題相關的部分資訊（例如列出部分語言列表或與語言支援相關的內容），即使不完整。
+    若回答與問題完全無關、翻譯錯誤或未提供任何相關資訊，則評為無用，輸出 'no'。
     """
     return ChatPromptTemplate.from_messages([
         ("system", instruction),
