@@ -1,97 +1,103 @@
+<div align="right">
+
+**English** | [繁體中文](README.zh-TW.md)
+
+</div>
+
 # RAG_FINAL_PROJECT
 
-這個專案包含兩個獨立的子專案：`AdaptiveRAG` 和 `OfficeFileBot` 。  
-- `AdaptiveRAG` 是一個基於 RAG 技術的技術文件問答系統，專注於處理 ASUS Y2025_ML_UNI 多語言字串翻譯表文件，提供專業的 BIOS 設定問答及自動翻譯功能。
-- `OfficeFileBot` 是一個基於 Taipy GUI 的辦公室檔案問答機器人，支援多種檔案格式的問答服務。  
+This repository contains two independent sub-projects: `AdaptiveRAG` and `OfficeFileBot`.
+- `AdaptiveRAG` is a RAG-based question-answering system for technical documents. It focuses on the ASUS Y2025_ML_UNI multilingual string translation spreadsheet, providing expert Q&A on BIOS settings along with automatic translation.
+- `OfficeFileBot` is an office-file Q&A chatbot built on Taipy GUI, supporting question answering over a wide range of file formats.
 
-## 1. AdaptiveRAG 
+## 1. AdaptiveRAG
 
-`AdaptiveRAG` 是一個基於 RAG（Retrieval-Augmented Generation）技術的技術文件問答系統，專為處理 ASUS 的 2025_ML_UNI 多語言字串翻譯表文件設計。它針對 BIOS 設定的技術術語、產品代碼（如 Gaming、Commercial）和多語言支援提供專業問答，並具備自動翻譯功能。系統結合向量資料庫檢索、網路搜尋和直接回答功能，通過動態路由和品質驗證機制確保回應的準確性和實用性。
+`AdaptiveRAG` is a technical-document Q&A system built on RAG (Retrieval-Augmented Generation), designed specifically for ASUS's 2025_ML_UNI multilingual string translation spreadsheet. It delivers expert answers about BIOS technical terminology, product codes (e.g., Gaming, Commercial), and multilingual support, and it can translate missing strings automatically. The system combines vector-database retrieval, web search, and direct answering, using dynamic routing and quality-verification mechanisms to keep responses accurate and useful.
 
-### 主要功能
+### Key Features
 
-1. **BIOS 字串問答**：針對 2025_ML_UNI 文件，提供與 BIOS 字串翻譯、產品代碼和更新規則相關的專業解答。
-2. **動態問題路由**：根據問題類型，自動選擇以下路徑：
-   - **向量資料庫檢索**：用於 BIOS 字串翻譯、產品代碼管理和多語言支援相關問題。
-   - **網路搜尋**：用於非 BIOS 相關的通用問題。
-   - **直接回答**：用於簡單或無需檢索的問題。
-3. **文件評分與驗證**：
-   - 檢索到的文件經過相關性評分，確保與問題匹配。
-   - 生成的答案通過幻覺檢測（hallucination check）和有用性評估，確保基於文件且有效。
-4. **持久化資料庫**：向量資料庫儲存於 `./chroma_db`，支持高效查詢且無需每次重建。
-5. **自動翻譯功能**：針對 `Lost_String` 分頁，根據英文（en-US）內容補全缺失的語言翻譯，並將結果儲存至新檔案。
-6. **支援範例問題**：
-   - 「如何將某個 ASUS Token 翻譯成日文？」
-   - 「Gaming 產品代碼有哪些多語言支援？」
-   - 「什麼是 AMI Token 的作用？」
-   - 非 BIOS 問題（如「今天的日期是什麼？」）會轉向網路搜尋或直接回答。
+1. **BIOS string Q&A**: Answers questions about BIOS string translations, product codes, and update rules based on the 2025_ML_UNI document.
+2. **Dynamic question routing**: Automatically picks the best path for each question:
+   - **Vector-database retrieval**: For questions about BIOS string translation, product code management, and multilingual support.
+   - **Web search**: For general questions unrelated to BIOS.
+   - **Direct answering**: For simple questions that don't need retrieval.
+3. **Document grading and verification**:
+   - Retrieved documents are graded for relevance to make sure they match the question.
+   - Generated answers go through a hallucination check and a usefulness evaluation, ensuring they are grounded in the documents and actually helpful.
+4. **Persistent database**: The vector database is stored in `./chroma_db`, enabling fast queries without rebuilding on every run.
+5. **Automatic translation**: For the `Lost_String` sheet, fills in missing language translations based on the English (en-US) content and saves the results to a new file.
+6. **Example questions supported**:
+   - "How do I translate a given ASUS Token into Japanese?"
+   - "Which languages does the Gaming product code support?"
+   - "What does an AMI Token do?"
+   - Non-BIOS questions (e.g., "What's today's date?") are routed to web search or answered directly.
 
-### 使用技術
+### Tech Stack
 
-- **LangChain & LangGraph**：構建 RAG 工作流程，實現檢索、生成、路由和品質驗證邏輯。
-- **Chroma 向量資料庫**：儲存和檢索文件嵌入（embeddings），支持高效相似性搜索。
-- **Azure OpenAI**：
-  - 嵌入生成：使用 `text-embedding-ada-002` 模型。
-  - 語言模型：使用 `gpt-4o` 進行問答和翻譯。
-- **Tavily Search**：提供網路搜尋功能，補充本地文件無法回答的問題。
-- **Python 函式庫**：
-  - `pandas`：處理 Excel 文件（如 2025_ML_UNI）。
-  - `os` 和 `dotenv`：管理環境變數和檔案路徑。
+- **LangChain & LangGraph**: Build the RAG workflow, implementing retrieval, generation, routing, and quality-verification logic.
+- **Chroma vector database**: Stores and retrieves document embeddings for efficient similarity search.
+- **Azure OpenAI**:
+  - Embeddings: `text-embedding-ada-002`.
+  - Language model: `gpt-4o` for Q&A and translation.
+- **Tavily Search**: Provides web search to cover questions the local documents can't answer.
+- **Python libraries**:
+  - `pandas`: Processes Excel files (e.g., 2025_ML_UNI).
+  - `os` and `dotenv`: Manage environment variables and file paths.
 
-### 安裝與運行
+### Installation & Usage
 
 ```
 cd AdaptiveRAG
 python main.py
 ```
 
-**第一次運行**：
-- 程式會載入 `./example/2025_ML_UNI_20250311.xlsx`，並建立持久化向量資料庫（儲存於 `./chroma_db`）。
-- 後續運行將直接使用現有資料庫，提升啟動速度。
+**First run**:
+- The program loads `./example/2025_ML_UNI_20250311.xlsx` and builds a persistent vector database (stored in `./chroma_db`).
+- Subsequent runs reuse the existing database, so startup is much faster.
 
-**運行選項**：
-- 輸入 `1`：提問問題並獲得回應。
-- 輸入 `2`：自動翻譯 2025_ML_UNI 文件中 `Lost_String` 分頁的缺失欄位，並儲存至新檔案（如 `2025_ML_UNI_20250311_translated.xlsx`）。
-- 輸入 `3` 或 `exit`：結束程式。
+**Runtime options**:
+- Enter `1`: Ask a question and get an answer.
+- Enter `2`: Automatically translate the missing fields in the `Lost_String` sheet of the 2025_ML_UNI file and save them to a new file (e.g., `2025_ML_UNI_20250311_translated.xlsx`).
+- Enter `3` or `exit`: Quit the program.
 
-### 注意事項
+### Notes
 
-* 確保 `./example/2025_ML_UNI_20250311.xlsx` 檔案存在，否則程式會報錯並拋出 `FileNotFoundError`。
-* 系統針對 BIOS 字串翻譯和產品代碼管理問題最佳化，非相關問題可能依賴網路搜尋，回答品質受網路資料影響。
-* 自動翻譯功能僅處理 `Lost_String` 分頁，且需 en-US 欄位有值，否則該行會被跳過並顯示警告。
+* Make sure `./example/2025_ML_UNI_20250311.xlsx` exists; otherwise the program raises a `FileNotFoundError`.
+* The system is optimized for BIOS string translation and product code management. Unrelated questions may fall back to web search, so answer quality depends on what's available online.
+* Automatic translation only processes the `Lost_String` sheet and requires the en-US column to have a value; otherwise the row is skipped with a warning.
 
-### 未來計劃
+### Roadmap
 
-* 支持多檔案同時上傳與分析，提升處理能力。
-* 優化網路搜尋結果的篩選邏輯，提高非文件問題的回答品質。
-* 開發圖形使用者界面（GUI）或 Web 界面，改善使用者體驗。
-* 增加對更多語言和文件格式的支持，例如 PDF 或 Word 文件。
+* Support uploading and analyzing multiple files at once.
+* Improve the filtering logic for web search results to raise answer quality on non-document questions.
+* Build a graphical user interface (GUI) or web interface for a better user experience.
+* Add support for more languages and file formats, such as PDF and Word documents.
 
 ## 2. OfficeFileBot
 
-`OfficeFileBot` 是一個基於 Taipy GUI 的辦公室檔案問答機器人，使用者可以上傳各類型的檔案（如 PDF、Word、Excel、CSV 等），並讓 AI 根據檔案內容提供問答服務。此系統的核心功能包括檔案解析、段落分割、向量化處理及基於 RAG（Retrieval-Augmented Generation）技術進行對話生成。使用者可以通過界面與 AI 進行互動，並能夠查看過去的對話紀錄。
+`OfficeFileBot` is an office-file Q&A chatbot built on Taipy GUI. Users can upload files of various types (PDF, Word, Excel, CSV, etc.) and have the AI answer questions based on the file contents. Its core capabilities include file parsing, paragraph splitting, vectorization, and conversation generation powered by RAG (Retrieval-Augmented Generation). Users interact with the AI through the interface and can also browse their past conversations.
 
-### 主要功能
+### Key Features
 
-1. 檔案上傳：使用者可以上傳多種檔案格式（.pdf, .docx, .pptx, .csv, .xlsx），系統會根據檔案格式進行解析和處理。
+1. File upload: Users can upload files in multiple formats (.pdf, .docx, .pptx, .csv, .xlsx); the system parses and processes each file according to its format.
 
-2. 檔案解析：系統支持處理多種文件格式，將文件內容提取並進行段落分割和向量化處理，以便進行問答。
+2. File parsing: The system handles multiple document formats, extracting content and running paragraph splitting and vectorization so the content is ready for Q&A.
 
-3. 段落分割與向量化處理：上傳的檔案會根據使用者設置的分割字串和重複字元數進行段落分割，並生成向量表示，方便後續檢索和回答。
+3. Paragraph splitting and vectorization: Uploaded files are split into paragraphs based on the user-configured split string and overlap character count, then converted into vector representations for later retrieval and answering.
 
-4. CSV 檔案處理：如果上傳的是 CSV 檔案，使用者可以設置忽略的行數，系統會自動跳過指定的行數並加載檔案。
+4. CSV file handling: For CSV uploads, users can configure how many rows to skip; the system skips the specified rows automatically before loading the file.
 
-5. 過去對話記錄：系統會記錄所有對話並支持選擇查看過去的對話紀錄，方便使用者回顧。
+5. Conversation history: All conversations are recorded, and users can select and review past conversations at any time.
 
-6. 即時問答：使用者可以在訊息框輸入問題，AI 會根據當前檔案內容及對話上下文提供回答。
+6. Real-time Q&A: Users type questions in the message box, and the AI answers based on the current file contents and the conversation context.
 
-### 使用技術
+### Tech Stack
 
-* Taipy GUI：用於構建前端界面，實現與使用者的交互。
-* RAG 技術：用於檔案內容的檢索與生成，幫助 AI 根據檔案提供智能回應。
-* Python 函式庫：包括處理各種檔案的函式庫，如 `pdf_load` 解析 PDF 檔案，`office_file` 解析 Office 格式檔案，`pandas_agent` 處理 CSV 檔案等。
+* Taipy GUI: Builds the front-end interface for user interaction.
+* RAG: Powers retrieval and generation over file contents, letting the AI respond intelligently based on the files.
+* Python libraries: Includes libraries for handling different file types, such as `pdf_load` for parsing PDF files, `office_file` for Office formats, and `pandas_agent` for CSV files.
 
-### 安裝與運行
+### Installation & Usage
 
 ```
 pip install -r requirements.txt
@@ -102,28 +108,28 @@ cd OfficeFileBot
 python app.py
 ```
 
-如果遇到以下錯誤：
+If you run into the following error:
 
 ```
 ImportError: failed to find libmagic.  Check your installation
 ```
 
-請解除安裝 python-magic：
+uninstall python-magic:
 
 ```
 pip uninstall python-magic
 ```
 
-### 預覽界面
+### Interface Preview
 
-* 使用者可以通過直覺式界面上傳檔案，設置分割字串和重複字元數，並即時發送訊息進行詢問。
-* 可查看過去的對話並選擇進行查看或繼續。
+* Users can upload files through an intuitive interface, configure the split string and overlap character count, and send questions in real time.
+* Past conversations can be browsed and either reviewed or continued.
 
-### 注意事項
+### Notes
 
-* 當上傳檔案後，請確保選擇正確的檔案格式，並根據檔案的內容設置適當的分割參數。
+* After uploading a file, make sure you select the correct file format and set split parameters appropriate for its content.
 
-### 未來計劃
+### Roadmap
 
-* 支持多檔案同時上傳與分析。
-* 支持更多檔案格式。
+* Support uploading and analyzing multiple files at once.
+* Support more file formats.
